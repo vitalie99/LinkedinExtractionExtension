@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>LinkedIn Data Tools</title>
+  <style>
+    body {
+      width: 350px; /* Slightly narrower */
+      min-height: auto; /* Auto height based on content */
+      padding: 15px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      background-color: #f7f9fc;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      gap: 12px; /* Spacing between elements */
+    }
+    h1 {
+      color: #0a66c2;
+      font-size: 18px;
+      margin-top: 0;
+      margin-bottom: 5px; /* Reduced bottom margin */
+      text-align: center;
+      font-weight: 600;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #e0e0e0;
+      margin: 10px 0; /* Reduced margin */
+    }
+    .instructions {
+      background-color: #e8f3ff;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 12.5px; /* Slightly larger */
+      line-height: 1.5;
+      border: 1px solid #cce0f5;
+      color: #1d4f8d;
+    }
+    .instructions strong {
+        color: #00529B;
+        font-weight: 600;
+    }
+    button {
+      background-color: #0a66c2;
+      color: white;
+      border: none;
+      padding: 10px 15px; /* Standardized padding */
+      border-radius: 5px;
+      font-size: 13.5px; /* Standardized font size */
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;
+      width: 100%;
+      box-sizing: border-box;
+      /* margin-top: 8px; removed, using gap in body */
+    }
+    button:hover {
+      background-color: #004c99;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.12);
+    }
+    button:active {
+      background-color: #003d7a;
+    }
+    button:disabled {
+      background-color: #b0b0b0;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    .status-message {
+        padding: 10px 12px;
+        border-radius: 5px;
+        font-size: 13px;
+        display: none; /* Hidden by default, shown by JS */
+        word-wrap: break-word;
+        border: 1px solid transparent;
+        text-align: center;
+    }
+    .status-message.success { background-color: #d1f7d9; color: #135421; border-color: #b3eec1; }
+    .status-message.error   { background-color: #ffe3e3; color: #8b1616; border-color: #ffc1c1; }
+    .status-message.info    { background-color: #e0f0ff; color: #0c3c7a; border-color: #badcff; }
+    .status-message.warning { background-color: #fff3cd; color: #664d03; border-color: #ffecb5;}
+
+    #dataCollectionControls {
+        display: flex;
+        flex-direction: column;
+        gap: 10px; /* Spacing between buttons and sections */
+    }
+  </style>
+</head>
+<body>
+  <h1>LinkedIn Data Extractor</h1>
+
+  <div id="dataCollectionControls"> <button id="startNewSessionBtnPopup" title="Clears all previously collected data for this session.">Start New Collection Session</button>
+    <hr>
+    <div class="instructions">
+      <strong>Collect Page Text:</strong><br>
+      Use the floating button on LinkedIn pages, or:<br>
+      1. Manually navigate to a LinkedIn profile's page (main, posts, comments, or reactions).<br>
+      2. Ensure the page is fully loaded.<br>
+      3. Click "Collect Current Page Text" below.
+    </div>
+    <button id="collectCurrentPageBtnPopup">Collect Current Page Text</button>
+    <hr>
+    <button id="downloadCollectedBtnPopup" title="Downloads all data collected in this session.">Download Collected Data File</button>
+  </div>
+
+  <div id="status" class="status-message" style="display:none;"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
