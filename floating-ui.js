@@ -301,8 +301,8 @@
             // If still 'processing' here, it means the final status update from background hasn't arrived or wasn't 'success'/'error'.
             // We don't want to prematurely set to 'default' if background is still working.
         }
-      });
-    } catch (e) {
+      }); // Closing parenthesis and semicolon for chrome.runtime.sendMessage
+    } catch (e) { // This catch is outside the sendMessage callback, which is correct. It should catch errors from the outer function scope.
   function initialize() {
     // console.log(`${SCRIPT_NAME}: DOM ready, running initialize().`);
     try {
