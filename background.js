@@ -1,16 +1,63 @@
-// background.js (v5-robust-parsing) - Updated version with all fixes & enhanced error handling
+// background.js (v6_dify_integration) - Merged version with Dify AI refinement and robust parsing.
 
 import { CONFIG } from './config.js';
 // Import the ROBUST parser functions
 import { parseProfileInfo } from './profileParser.js';
 import { parsePosts, parseComments, parseReactions } from './activityParser.js';
-import { cleanDuplicateContent, calculateSimilarity, extractHeadlineFromProfile, cleanProfileName } from './parserUtils.js';
+import { cleanDuplicateContent, calculateSimilarity, extractHeadlineFromProfile, cleanProfileName as importedCleanProfileName } from './parserUtils.js';
 
 // Import existing prompts
 import { MASTER_INSTRUCTIONS_TEXT, PROFILE_PROMPT_TEXT, POSTS_PROMPT_TEXT, COMMENTS_PROMPT_TEXT, REACTIONS_PROMPT_TEXT } from './prompts.js';
 
-const SCRIPT_VERSION = "background_v5_robust_parsing_FIXED"; // Indicate this is a revised version
-console.log(`${SCRIPT_VERSION}: Script loaded with robust parsing algorithms and enhanced error handling.`);
+const SCRIPT_VERSION = "background_v6_dify_integration_profileName_fix"; // Updated version
+console.log(`${SCRIPT_VERSION}: Script loaded with Dify AI refinement capabilities.`);
+
+// --- SNIPPET: Import Validation ---
+console.log(`${SCRIPT_VERSION}: Validating imports...`);
+const requiredFunctions = [
+    { name: 'parseProfileInfo', obj: typeof parseProfileInfo !== 'undefined' ? parseProfileInfo : null },
+    { name: 'parsePosts', obj: typeof parsePosts !== 'undefined' ? parsePosts : null },
+    { name: 'parseComments', obj: typeof parseComments !== 'undefined' ? parseComments : null },
+    { name: 'parseReactions', obj: typeof parseReactions !== 'undefined' ? parseReactions : null },
+    { name: 'importedCleanProfileName', obj: typeof importedCleanProfileName !== 'undefined' ? importedCleanProfileName : null },
+    { name: 'calculateSimilarity', obj: typeof calculateSimilarity !== 'undefined' ? calculateSimilarity : null },
+    { name: 'extractHeadlineFromProfile', obj: typeof extractHeadlineFromProfile !== 'undefined' ? extractHeadlineFromProfile : null }
+];
+
+let importErrors = false;
+requiredFunctions.forEach(({ name, obj }) => {
+    if (typeof obj !== 'function') {
+        console.error(`${SCRIPT_VERSION}: Required function '${name}' is not properly imported!`);
+        importErrors = true;
+    }
+});
+
+if (importErrors) {
+    console.error(`${SCRIPT_VERSION}: Critical import errors detected! Extension may not function properly.`);
+} else {
+    console.log(`${SCRIPT_VERSION}: All required functions imported successfully.`);
+}
+// --- END SNIPPET: Import Validation ---
+
+// --- SNIPPET: Effective cleanProfileName ---
+let cleanProfileName;
+if (typeof importedCleanProfileName === 'function') {
+    cleanProfileName = importedCleanProfileName;
+    console.log(`${SCRIPT_VERSION}: Using imported cleanProfileName.`);
+} else {
+    console.warn(`${SCRIPT_VERSION}: importedCleanProfileName not found, using fallback implementation.`);
+    cleanProfileName = function(name) { // Fallback definition
+        if (!name || typeof name !== 'string') return name || "Unknown Profile";
+        return name
+            .replace(/\s*{:badgeType}\s*/g, '')
+            .replace(/\s+account\s*$/i, '')
+            .replace(/\s+has\s+a\s*/i, '')
+            .replace(/^(?:Mr\.? |Ms\.? |Mrs\.? |Dr\.? )/i, '')
+            .replace(/\s*(?:,|PhD|MBA|MD|Esq\.?)$/i, '')
+            .trim();
+    };
+}
+// --- END SNIPPET: Effective cleanProfileName ---
 
 const SECTION_KEYS = {
   PROFILE: 'profile', POSTS: 'posts', COMMENTS: 'comments', REACTIONS: 'reactions'
@@ -32,61 +79,58 @@ async function setStoredParsedData(data) {
         console.error(`${SCRIPT_VERSION}: Error setting stored parsed data:`, chrome.runtime.lastError.message);
         reject(new Error(chrome.runtime.lastError.message));
       } else {
-        console.log(`${SCRIPT_VERSION}: Parsed data successfully set in storage.`);
         resolve();
       }
     });
   });
 }
 
-// Enhanced profile name extraction with better validation (from original file)
 function extractProfileNameFromText(text) {
     if (!text) return "Unknown Profile";
     const lines = text.split('\n');
+    // Use the globally defined cleanProfileName
+    const effectiveCleanProfileName = cleanProfileName;
+
     for (let i = 0; i < Math.min(10, lines.length); i++) {
         const line = lines[i].trim();
         if (line.length < 3 || line.length > 100) continue;
         if (line.includes('{:badgeType}') || line.includes('account')) continue;
         if (/linkedin|feed|posts|comments|reactions|activity|search|people|messaging|home|network|jobs|notifications|contact info|followers|connections|degree connection/i.test(line)) continue;
         if (/^\d+|see all|view full|mutual connections?$|pending|message|connect|follow|more|view|profile|shared|ago|company|university|Premium|Verified/i.test(line)) continue;
-        if (!/^[A-Za-z\s'-]+$/.test(line)) continue;
+        if (!/^[A-Za-z\s'-]+$/.test(line)) continue; // Allow apostrophes and hyphens in names
         if (i + 1 < lines.length) {
             const nextLine = lines[i + 1].trim();
             if (nextLine.match(/He\/Him|She\/Her|They\/Them/i) ||
                 (i + 2 < lines.length && lines[i + 2].trim().match(/(?:1st|2nd|3rd)/))) {
-                return cleanProfileName(line); // Clean it immediately
+                return effectiveCleanProfileName(line);
             }
         }
         const words = line.split(/\s+/);
         const capitalizedWords = words.filter(w => w.length > 1 && w[0] === w[0].toUpperCase()).length;
         if (words.length === 1 && capitalizedWords === 1 && words[0].length > 2) {
-            return cleanProfileName(line);
+            return effectiveCleanProfileName(line);
         }
         if (words.length > 1 && words.length <= 6 && capitalizedWords >= 1) {
-            return cleanProfileName(line);
+            return effectiveCleanProfileName(line);
         }
     }
     const pronounPattern = /^([A-Za-z\s'-]+)\s*\n\s*(?:He\/Him|She\/Her|They\/Them)/m;
     const pronounMatch = text.match(pronounPattern);
     if (pronounMatch && pronounMatch[1] && !pronounMatch[1].includes('{:')) {
-        return cleanProfileName(pronounMatch[1].trim());
+        return effectiveCleanProfileName(pronounMatch[1].trim());
     }
-    // Fallback: try using the headline extractor if name is not found early.
-    // This is less ideal as headline can be long.
-    const extractedHeadline = extractHeadlineFromProfile(text, "Unknown Profile"); // parserUtils version
-    if (extractedHeadline && extractedHeadline.split(/\s+/).length <= 6 && /^[A-Za-z\s'-]+$/.test(extractedHeadline) && !extractedHeadline.toLowerCase().includes(' at ')) {
-        // If headline looks like a name and not a typical job title with "at"
-        // This is a heuristic and might not be perfect.
-        // return cleanProfileName(extractedHeadline);
+    const extractedHeadlineFn = typeof extractHeadlineFromProfile === 'function' ? extractHeadlineFromProfile : () => "Unknown Profile";
+    const extractedHeadline = extractedHeadlineFn(text, "Unknown Profile");
+    if (extractedHeadline && extractedHeadline !== "Unknown Profile" && extractedHeadline.split(/\s+/).length <= 6 && /^[A-Za-z\s'-]+$/.test(extractedHeadline) && !extractedHeadline.toLowerCase().includes(' at ')) {
+        // return effectiveCleanProfileName(extractedHeadline); // Commented out as per original
     }
-
     return "Unknown Profile";
 }
 
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const senderIdentifier = sender.tab ? `Tab ${sender.tab.id}` : 'Popup/OtherExtensionUI';
-  console.log(`${SCRIPT_VERSION}: Message received - Action: ${request.action}, From: ${senderIdentifier}, Payload:`, request);
+  console.log(`${SCRIPT_VERSION}: BG Received Msg - Action: ${request.action}, From: ${senderIdentifier}, Payload Snippet:`, JSON.stringify(request)?.substring(0, 200));
 
   switch (request.action) {
     case 'startNewCollectionSession':
@@ -103,461 +147,936 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           updateUIs(errorMsg, "error", sender.tab?.id);
           sendResponse({ success: false, error: errorMsg });
         });
-      return true; // Indicates async response
+      return true;
 
     case 'initiateCurrentPageTextCollection':
       handleInitiateCurrentPageTextCollection(request, sender)
         .then(response => {
-          // The response from handleInitiateCurrentPageTextCollection will be {success: boolean, message?: string, error?: string}
           sendResponse(response);
         })
-        .catch(error => { // This catch is for unexpected errors from handleInitiateCurrentPageTextCollection itself
+        .catch(error => {
           const errorMsg = error.message || "Unknown error in initiateCurrentPageTextCollection promise chain.";
-          console.error(`${SCRIPT_VERSION}: ${request.action} - Outer promise ERROR: ${errorMsg}`, error);
+          console.error(`${SCRIPT_VERSION}: BG ${request.action} - handleInitiateCurrentPageTextCollection FAILED. Error: ${errorMsg}`, error);
           updateUIs(`Collection Error: ${errorMsg.substring(0, 150)}`, "error", sender.tab?.id);
           sendResponse({ success: false, error: errorMsg });
         });
-      return true; // Indicates async response
+      return true;
 
     case 'downloadCollectedDataFile':
       handleDownloadCollectedDataFile(sender.tab?.id)
-        .then(response => sendResponse(response))
+        .then(response => {
+            sendResponse(response);
+        })
         .catch(error => {
           const errorMsg = error.message || "Unknown download error.";
           console.error(`${SCRIPT_VERSION}: ${request.action} - Overall ERROR: ${errorMsg}`);
           updateUIs(`Download failed: ${errorMsg.substring(0, 150)}`, "error", sender.tab?.id);
           sendResponse({ success: false, error: errorMsg });
         });
-      return true; // Indicates async response
+      return true;
+
+    case 'refineAllDataWithDify':
+      const { profileUrl: refineProfileUrl } = request;
+      const tabIdForRefinement = request.tabId || sender.tab?.id;
+
+      console.log(`${SCRIPT_VERSION}: Received refineAllDataWithDify for ${refineProfileUrl}`);
+      if (!refineProfileUrl) {
+        const errorMsg = "Profile URL missing for Dify refinement.";
+        console.error(`${SCRIPT_VERSION}: ${request.action} - ERROR: ${errorMsg}`);
+        updateUIs(errorMsg, "error", tabIdForRefinement);
+        sendResponse({ success: false, error: errorMsg });
+        return true; 
+      }
+
+      handleRefineAllDataWithDify(refineProfileUrl, tabIdForRefinement)
+        .then(response => {
+          console.log(`${SCRIPT_VERSION}: ${request.action} - handleRefineAllDataWithDify completed. Calling sendResponse.`);
+          sendResponse(response);
+        })
+        .catch(error => {
+          const errorMsg = `Error in Dify refinement process: ${error.message}`;
+          console.error(`${SCRIPT_VERSION}: ${request.action} - TOP LEVEL CATCH ERROR: ${errorMsg}`, error);
+          updateUIs(errorMsg.substring(0,150), "error", tabIdForRefinement);
+          sendResponse({ success: false, error: errorMsg });
+        });
+      return true;
 
     default:
       const unknownActionMsg = `Unknown action received: ${request.action}`;
       console.warn(`${SCRIPT_VERSION}: ${unknownActionMsg}`);
       sendResponse({ success: false, error: unknownActionMsg });
-      return false; // No async response
+      return false;
   }
 });
 
-// ENHANCED parsing with robust algorithms and detailed error handling
+// --- Dify Helper Functions ---
+function getRawTextKeyForSection(sectionKey) {
+  const lowerSectionKey = sectionKey.toLowerCase();
+  if (lowerSectionKey === SECTION_KEYS.PROFILE) return 'mainProfileText';
+  if (lowerSectionKey === SECTION_KEYS.POSTS) return 'postsText';
+  if (lowerSectionKey === SECTION_KEYS.COMMENTS) return 'commentsText';
+  if (lowerSectionKey === SECTION_KEYS.REACTIONS) return 'reactionsText';
+  console.warn(`${SCRIPT_VERSION}: Unknown sectionKey '${sectionKey}' for getRawTextKeyForSection`);
+  return null;
+}
+
+function getParsedResultKeyForSection(sectionKey) {
+  const lowerSectionKey = sectionKey.toLowerCase();
+  if (lowerSectionKey === SECTION_KEYS.PROFILE) return 'profileInfo';
+  if ([SECTION_KEYS.POSTS, SECTION_KEYS.COMMENTS, SECTION_KEYS.REACTIONS].includes(lowerSectionKey)) return lowerSectionKey;
+  console.warn(`${SCRIPT_VERSION}: Unknown sectionKey '${sectionKey}' for getParsedResultKeyForSection`);
+  return null;
+}
+
+async function callDifyWorkflowForRefinement(sectionType, profilePersonName, rawSectionText, initialParsedJsonString) {
+  const DIFY_API_KEY = 'app-7HGSEfSYnQqeMyKNMDOzVdtJ';
+  const DIFY_API_BASE_URL = 'https://api.dify.ai/v1';
+
+  const endpoint = `${DIFY_API_BASE_URL}/workflows/run`;
+  const uniqueUserId = `linkedin_ext_user_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+
+  const body = {
+    inputs: {
+      section_type: sectionType,
+      profile_person_name: profilePersonName,
+      raw_section_text: rawSectionText,
+      initial_parsed_json: initialParsedJsonString
+    },
+    response_mode: "blocking",
+    user: uniqueUserId
+  };
+
+  console.log(`${SCRIPT_VERSION}: Calling Dify Workflow for Refinement. Endpoint: ${endpoint}, Section: ${sectionType}, User: ${uniqueUserId}`);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${DIFY_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = await response.json();
+        console.error(`${SCRIPT_VERSION}: Dify API HTTP Error Response Body:`, errorData);
+      } catch (e) {
+        const responseText = await response.text();
+        console.error(`${SCRIPT_VERSION}: Dify API HTTP Error - Non-JSON response:`, responseText);
+        errorData = { message: response.statusText || 'Failed to fetch', details: responseText };
+      }
+      console.error(`${SCRIPT_VERSION}: Dify API HTTP Error: ${response.status}`, errorData);
+      return {
+        success: false,
+        error: `Dify API error (${response.status}): ${errorData.message || 'Unknown Dify API error'}`,
+        details: errorData,
+        workflow_run_id: errorData?.task_id || errorData?.workflow_run_id || null // Attempt to get run ID even from error
+      };
+    }
+
+    const result = await response.json();
+    // Log more of the response to help debug structure issues if they re-occur
+    console.log(`${SCRIPT_VERSION}: Dify Workflow response for ${sectionType}:`, JSON.stringify(result).substring(0, 1000));
+
+
+    // Check new Dify response structure: result.data.outputs.final_refined_json
+    if (result && result.data && result.data.outputs && typeof result.data.outputs.final_refined_json === 'string') {
+      console.log(`${SCRIPT_VERSION}: Dify Workflow succeeded for ${sectionType}. Refined JSON (string) received.`);
+      try {
+        const refinedJson = JSON.parse(result.data.outputs.final_refined_json);
+        console.log(`${SCRIPT_VERSION}: Refined JSON for ${sectionType} parsed successfully.`);
+        return {
+          success: true,
+          data: refinedJson, // This is the object like {"answer": {...}} or {"commentsMadeByProfilePerson": ...}
+          workflow_run_id: result.data.id || result.workflow_run_id // Use data.id as primary
+        };
+      } catch (e) {
+        console.error(`${SCRIPT_VERSION}: Failed to parse refined JSON string from Dify for ${sectionType}:`, e);
+        console.error(`${SCRIPT_VERSION}: Raw string from Dify for ${sectionType} was:`, result.data.outputs.final_refined_json);
+        return {
+          success: false,
+          error: 'Failed to parse refined JSON from Dify. Output was not valid JSON.',
+          raw_output: result.data.outputs.final_refined_json,
+          workflow_run_id: result.data.id || result.workflow_run_id
+        };
+      }
+    } else {
+       if (result && result.data && result.data.status === 'failed') {
+          console.error(`${SCRIPT_VERSION}: Dify Workflow execution explicitly failed for ${sectionType}:`, result.data.error || result.data);
+          return {
+            success: false,
+            error: `Dify workflow execution failed for ${sectionType}: ${result.data.error || 'Unknown workflow error'}`,
+            workflow_run_id: result.data.id || result.workflow_run_id,
+            details: result.data
+          };
+       }
+      console.error(`${SCRIPT_VERSION}: Dify Workflow response unexpected structure for ${sectionType} or missing final_refined_json string. Received:`, result);
+      return {
+        success: false,
+        error: 'Unexpected response structure from Dify workflow or missing refined JSON string.',
+        details: result,
+        workflow_run_id: result.data?.id || result.workflow_run_id || result.task_id // Get any available ID
+      };
+    }
+
+  } catch (error) {
+    console.error(`${SCRIPT_VERSION}: Network or other error calling Dify API for ${sectionType}:`, error);
+    return {
+      success: false,
+      error: `Failed to call Dify API for ${sectionType}: ${error.message}`
+    };
+  }
+}
+
+async function handleRefineAllDataWithDify(profileUrl, tabId) {
+  console.log(`${SCRIPT_VERSION}: Starting AI refinement for all sections of ${profileUrl}`);
+  updateUIs("Starting AI refinement for all sections... This may take some time.", "info", tabId);
+
+  const allProfilesData = await getStoredParsedData();
+  const currentProfileData = allProfilesData[profileUrl];
+
+  if (!currentProfileData) {
+    const msg = `No data found for profile ${profileUrl} to refine. Please collect some data first.`;
+    console.warn(`${SCRIPT_VERSION}: ${msg}`);
+    updateUIs(msg, "warning", tabId);
+    return { success: false, error: msg };
+  }
+
+  const initialProfilePersonNameForDify = currentProfileData.profileName || "Unknown Profile";
+  let overallSuccess = true;
+  let refinementMessages = [];
+  const sectionsToProcess = [SECTION_KEYS.PROFILE, SECTION_KEYS.POSTS, SECTION_KEYS.COMMENTS, SECTION_KEYS.REACTIONS];
+
+  for (const sectionKey of sectionsToProcess) {
+    const rawTextKey = getRawTextKeyForSection(sectionKey);
+    const parsedResultKey = getParsedResultKeyForSection(sectionKey);
+
+    if (!rawTextKey || !parsedResultKey) {
+        console.warn(`${SCRIPT_VERSION}: Invalid section key '${sectionKey}' during refinement. Skipping.`);
+        refinementMessages.push(`Skipped invalid section key: ${sectionKey}.`);
+        continue;
+    }
+
+    if (!currentProfileData.parsingMetadata) {
+        currentProfileData.parsingMetadata = {};
+    }
+    if (typeof currentProfileData.parsingMetadata[`${sectionKey}DifyRefined`] === 'undefined') {
+        currentProfileData.parsingMetadata[`${sectionKey}DifyRefined`] = false;
+    }
+
+    const rawSectionText = currentProfileData.rawTexts?.[rawTextKey];
+    const initialParsedData = currentProfileData.parsingResults?.[parsedResultKey];
+
+    if (rawSectionText && initialParsedData && Object.keys(initialParsedData).length > 0 && !initialParsedData.parseError) {
+      updateUIs(`Refining ${sectionKey} data with AI...`, "info", tabId);
+      let initialParsedJsonString;
+      try {
+        initialParsedJsonString = JSON.stringify(initialParsedData);
+      } catch (e) {
+        console.error(`${SCRIPT_VERSION}: Could not stringify initial parsed data for ${sectionKey} of ${profileUrl}`, e);
+        updateUIs(`⚠️ Error preparing ${sectionKey} data for AI. Skipping.`, "error", tabId);
+        refinementMessages.push(`Error preparing ${sectionKey} for AI: ${e.message}`);
+        currentProfileData.parsingMetadata[`${sectionKey}DifyRefined`] = false;
+        currentProfileData.parsingMetadata[`${sectionKey}DifyRefinementError`] = `Serialization error: ${e.message}`;
+        overallSuccess = false;
+        continue;
+      }
+
+      // Use the most current known name for this profile for Dify's context.
+      // This name is updated if the 'profile' section itself is successfully refined.
+      const nameForDifyContext = currentProfileData.profileName || initialProfilePersonNameForDify;
+
+      const refinementResult = await callDifyWorkflowForRefinement(
+        sectionKey,
+        nameForDifyContext,
+        rawSectionText,
+        initialParsedJsonString
+      );
+
+      if (refinementResult.success && refinementResult.data) {
+        // *** START: Unwrapping logic for Dify's {"answer": ...} structure ***
+        if (refinementResult.data && typeof refinementResult.data.answer !== 'undefined') {
+            currentProfileData.parsingResults[parsedResultKey] = refinementResult.data.answer;
+        } else {
+            currentProfileData.parsingResults[parsedResultKey] = refinementResult.data;
+            if (sectionKey !== SECTION_KEYS.COMMENTS) {
+                 console.warn(`${SCRIPT_VERSION}: Dify refined data for ${sectionKey} did not have the 'answer' wrapper as typically expected. Storing raw Dify output for this section.`);
+            }
+        }
+        // *** END: Unwrapping logic ***
+
+        currentProfileData.parsingMetadata[`${sectionKey}DifyRefined`] = true;
+        currentProfileData.parsingMetadata[`${sectionKey}DifyRefinementError`] = null;
+        currentProfileData.parsingMetadata[`${sectionKey}DifyWorkflowRunId`] = refinementResult.workflow_run_id;
+
+        // *** START: Update profileName if PROFILE section was refined ***
+        if (sectionKey === SECTION_KEYS.PROFILE && currentProfileData.parsingResults.profileInfo) {
+            const refinedNameFromDify = currentProfileData.parsingResults.profileInfo.name;
+            // Use the globally effective cleanProfileName
+            const effectiveCleanProfileNameFn = cleanProfileName;
+
+            if (refinedNameFromDify &&
+                typeof refinedNameFromDify === 'string' &&
+                refinedNameFromDify.trim() !== "" &&
+                refinedNameFromDify !== "Unknown Profile" &&
+                refinedNameFromDify !== "See Featured Section") {
+
+                const cleanedDifyName = effectiveCleanProfileNameFn(refinedNameFromDify);
+                const currentCleanedProfileName = effectiveCleanProfileNameFn(currentProfileData.profileName);
+
+                if (cleanedDifyName !== currentCleanedProfileName) {
+                    console.log(`${SCRIPT_VERSION}: Updating profileName for ${profileUrl} from "${currentProfileData.profileName}" to Dify-refined name "${cleanedDifyName}".`);
+                    currentProfileData.profileName = cleanedDifyName;
+                }
+            }
+        }
+        // *** END: Update profileName ***
+
+        const successMsg = `✅ ${sectionKey} data refined successfully by AI.`;
+        console.log(`${SCRIPT_VERSION}: ${successMsg} (Run ID: ${refinementResult.workflow_run_id || 'N/A'})`);
+        updateUIs(successMsg, "success", tabId);
+        refinementMessages.push(successMsg);
+      } else {
+        currentProfileData.parsingMetadata[`${sectionKey}DifyRefined`] = false;
+        currentProfileData.parsingMetadata[`${sectionKey}DifyRefinementError`] = refinementResult.error || 'Unknown Dify error';
+        currentProfileData.parsingMetadata[`${sectionKey}DifyWorkflowRunId`] = refinementResult.workflow_run_id;
+         if (refinementResult.raw_output) {
+            currentProfileData.parsingMetadata[`${sectionKey}DifyRawOutput`] = refinementResult.raw_output.substring(0, 1000);
+        }
+        const errorMsg = `⚠️ ${sectionKey} AI refinement failed: ${(refinementResult.error || 'Unknown Dify error').substring(0,100)}`;
+        console.warn(`${SCRIPT_VERSION}: ${errorMsg} (Run ID: ${refinementResult.workflow_run_id || 'N/A'})`, refinementResult.details || '');
+        updateUIs(errorMsg, "error", tabId);
+        refinementMessages.push(errorMsg);
+        overallSuccess = false;
+      }
+    } else {
+      let skipReason = "missing raw text or initial valid parsed data.";
+      if (initialParsedData && initialParsedData.parseError) {
+          skipReason = "initial parsing resulted in an error.";
+      } else if (!rawSectionText) {
+          skipReason = "no raw text collected.";
+      } else if (!initialParsedData || Object.keys(initialParsedData).length === 0) {
+          skipReason = "no initial parsed data available.";
+      }
+      const skipMsg = `Skipping AI refinement for ${sectionKey}: ${skipReason}`;
+      console.log(`${SCRIPT_VERSION}: ${skipMsg}`);
+      refinementMessages.push(`Skipped ${sectionKey} (${skipReason.substring(0,30)}).`);
+      if (typeof currentProfileData.parsingMetadata[`${sectionKey}DifyRefined`] === 'undefined' || !currentProfileData.parsingMetadata[`${sectionKey}DifyRefined`]){
+          currentProfileData.parsingMetadata[`${sectionKey}DifyRefined`] = false;
+      }
+    }
+  }
+
+  allProfilesData[profileUrl] = currentProfileData;
+
+  try {
+    await setStoredParsedData(allProfilesData);
+  } catch(storageError) {
+      console.error(`${SCRIPT_VERSION}: Failed to save Dify refined data to storage for ${profileUrl}:`, storageError);
+      const storageErrorMsg = `CRITICAL: Failed to save refined data to storage! ${storageError.message.substring(0,100)}`;
+      updateUIs(storageErrorMsg, "error", tabId);
+      refinementMessages.push(storageErrorMsg);
+      return { success: false, message: storageErrorMsg, details: refinementMessages };
+  }
+
+  const finalMessage = overallSuccess ?
+    "AI refinement process completed for all applicable sections." :
+    "AI refinement process completed with some issues. Check logs and downloaded data for details.";
+
+  console.log(`${SCRIPT_VERSION}: ${finalMessage} Profile: ${profileUrl}. Summary: ${refinementMessages.join('; ')}`);
+  updateUIs(finalMessage, overallSuccess ? "success" : "warning", tabId);
+  return { success: overallSuccess, message: finalMessage, details: refinementMessages };
+}
+// --- End Dify Helper Functions ---
+
+
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
+        )
+    ]);
+}
+
+async function parseWithTimeout(parserFunction, rawText, profileNameContext, sectionKey, timeoutMs = 5000) { // Renamed profileName to profileNameContext
+    console.log(`${SCRIPT_VERSION}: parseWithTimeout starting for ${sectionKey} using ${parserFunction.name}, timeout: ${timeoutMs}ms`);
+
+    return new Promise((resolve, reject) => {
+        let completed = false;
+
+        const timeoutId = setTimeout(() => {
+            if (!completed) {
+                completed = true;
+                console.error(`${SCRIPT_VERSION}: Parser TIMEOUT for ${sectionKey} via ${parserFunction.name} after ${timeoutMs}ms`);
+                reject(new Error(`Parser timeout for ${sectionKey} (${parserFunction.name}) after ${timeoutMs}ms`));
+            }
+        }, timeoutMs);
+
+        Promise.resolve().then(async () => {
+            if (completed) return;
+            try {
+                // Pass profileNameContext to the parser function
+                const result = await parserFunction(rawText, profileNameContext);
+                if (!completed) {
+                    completed = true;
+                    clearTimeout(timeoutId);
+                    resolve(result);
+                }
+            } catch (error) {
+                if (!completed) {
+                    completed = true;
+                    clearTimeout(timeoutId);
+                    reject(error);
+                }
+            }
+        }).catch(error => { // Catch for the Promise.resolve().then() chain
+            if (!completed) {
+                completed = true;
+                clearTimeout(timeoutId);
+                reject(error);
+            }
+        });
+    });
+}
+
+
+function safeParseProfileInfo(rawText, profileNameContext) {
+    try {
+        return parseProfileInfo(rawText, profileNameContext);
+    } catch (error) {
+        console.error(`${SCRIPT_VERSION}: safeParseProfileInfo: parseProfileInfo threw an error:`, error);
+        throw error; 
+    }
+}
+
+function safeParsePosts(rawText, profileNameContext) {
+    try {
+        return parsePosts(rawText, profileNameContext);
+    } catch (error) {
+        console.error(`${SCRIPT_VERSION}: safeParsePosts: parsePosts threw an error:`, error);
+        throw error;
+    }
+}
+
+function safeParseComments(rawText, profileNameContext) {
+    try {
+        return parseComments(rawText, profileNameContext);
+    } catch (error) {
+        console.error(`${SCRIPT_VERSION}: safeParseComments: parseComments threw an error:`, error);
+        throw error;
+    }
+}
+
+function safeParseReactions(rawText, profileNameContext) {
+    try {
+        return parseReactions(rawText, profileNameContext);
+    } catch (error) {
+        console.error(`${SCRIPT_VERSION}: safeParseReactions: parseReactions threw an error:`, error);
+        throw error;
+    }
+}
+
+
 async function handleSaveCapturedTextAndParse(profileUrl, sectionKey, rawText) {
+    console.log(`${SCRIPT_VERSION}: HSCTAP started - section: ${sectionKey}, for Profile URL (ID): ${profileUrl}, text length: ${rawText?.length || 0}`);
+
     if (!profileUrl || !sectionKey || typeof rawText !== 'string') {
-      const errorMsg = "Invalid data for saving captured text (profileUrl, sectionKey, or text missing/invalid).";
-      console.error(`${SCRIPT_VERSION}: handleSaveCapturedTextAndParse - ERROR: ${errorMsg}`);
-      // This function is called by another async function, so throwing here is okay if the caller handles it.
-      // Or return an error status. For consistency with other parts, let's return a message.
+      const errorMsg = "Invalid data for HSCTAP (profileUrl, sectionKey, or text missing/invalid).";
+      console.error(`${SCRIPT_VERSION}: HSCTAP - ERROR: ${errorMsg}`);
       return `⚠️ ${sectionKey} save failed: ${errorMsg}`;
     }
 
-    const allProfilesData = await getStoredParsedData();
-    const currentProfileHolder = allProfilesData[profileUrl] || {
-        profileName: "Unknown Profile", // Initial default
-        parsingResults: {},
-        rawTexts: {},
-        parsingMetadata: {
-            lastUpdated: new Date().toISOString(),
-            textLengths: {},
-            parsingAttempts: {}
-        }
-    };
-
-    let rawTextKey = sectionKey.toLowerCase() + "Text";
-    if (sectionKey.toLowerCase() === SECTION_KEYS.PROFILE) rawTextKey = "mainProfileText";
-    currentProfileHolder.rawTexts[rawTextKey] = rawText;
-    currentProfileHolder.parsingMetadata.textLengths[rawTextKey] = rawText.length;
-    currentProfileHolder.parsingMetadata.lastUpdated = new Date().toISOString();
-
-    const attemptKey = sectionKey.toLowerCase();
-    currentProfileHolder.parsingMetadata.parsingAttempts[attemptKey] = (currentProfileHolder.parsingMetadata.parsingAttempts[attemptKey] || 0) + 1;
-
-    let profileNameToUse = currentProfileHolder.profileName;
-    if (sectionKey.toLowerCase() === SECTION_KEYS.PROFILE || profileNameToUse === "Unknown Profile") {
-        const extractedNameFromRaw = extractProfileNameFromText(rawText); // Uses the function in background.js
-        if (extractedNameFromRaw !== "Unknown Profile") {
-            profileNameToUse = extractedNameFromRaw;
-            currentProfileHolder.profileName = profileNameToUse; // Update the stored profile name
-        }
-    }
-    // Ensure profileNameToUse is always cleaned for use with parsers
-    profileNameToUse = cleanProfileName(profileNameToUse || "Unknown Profile"); // from parserUtils
-
-    console.log(`${SCRIPT_VERSION}: Starting robust parsing for ${sectionKey} section, profile: ${profileNameToUse}`);
-    console.log(`${SCRIPT_VERSION}: Raw text length: ${rawText.length} characters`);
-
-    let parsedResult = null;
-    let parseSuccess = false;
-    let parseErrorObject = null; // Changed from parseError to avoid conflict
-    let parseWarnings = [];
-    const startTime = Date.now();
+    const effectiveCleanProfileNameFn = cleanProfileName; // Use the globally defined cleanProfileName
 
     try {
-        if (sectionKey.toLowerCase() === SECTION_KEYS.PROFILE) {
-            parsedResult = parseProfileInfo(rawText, profileNameToUse); // Pass cleaned name
-            if (parsedResult) {
-                if (!parsedResult.name || parsedResult.name === "Unknown Profile") parseWarnings.push("Name not extracted by parser");
-                if (parsedResult.name && parsedResult.name !== "Unknown Profile" && profileNameToUse === "Unknown Profile") {
-                    currentProfileHolder.profileName = cleanProfileName(parsedResult.name); // Update with parser's extracted name if better
-                } else if (parsedResult.name && parsedResult.name === "Unknown Profile" && profileNameToUse !== "Unknown Profile") {
-                    parsedResult.name = profileNameToUse; // Ensure parser result uses the better name we found
-                } else if (parsedResult.name && parsedResult.name !== "Unknown Profile") {
-                     currentProfileHolder.profileName = cleanProfileName(parsedResult.name); // Default to parser's name if both are good
-                }
-
-
-                if (!parsedResult.headline) parseWarnings.push("Headline not extracted");
-                // Add more validation warnings as needed based on schema
-                currentProfileHolder.parsingResults.profileInfo = parsedResult;
-                parseSuccess = true;
-            }
-        } else if (sectionKey.toLowerCase() === SECTION_KEYS.POSTS) {
-            parsedResult = parsePosts(rawText, profileNameToUse);
-            if (parsedResult && parsedResult.postsAndRepostsByProfilePerson) {
-                if (parsedResult.postsAndRepostsByProfilePerson.length === 0) parseWarnings.push("No posts/reposts extracted");
-                currentProfileHolder.parsingResults.posts = parsedResult;
-                parseSuccess = true;
-            }
-        } else if (sectionKey.toLowerCase() === SECTION_KEYS.COMMENTS) {
-            parsedResult = parseComments(rawText, profileNameToUse);
-            if (parsedResult && parsedResult.commentsMadeByProfilePerson) {
-                if (parsedResult.commentsMadeByProfilePerson.length === 0) parseWarnings.push("No comments extracted");
-                currentProfileHolder.parsingResults.comments = parsedResult;
-                parseSuccess = true;
-            }
-        } else if (sectionKey.toLowerCase() === SECTION_KEYS.REACTIONS) {
-            parsedResult = parseReactions(rawText, profileNameToUse);
-            if (parsedResult && parsedResult.reactionsMadeByProfilePerson) {
-                if (parsedResult.reactionsMadeByProfilePerson.length === 0) parseWarnings.push("No reactions extracted");
-                currentProfileHolder.parsingResults.reactions = parsedResult;
-                parseSuccess = true;
-            }
-        }
-        const parseTime = Date.now() - startTime;
-        console.log(`${SCRIPT_VERSION}: Parsing for ${sectionKey} completed in ${parseTime}ms. Success: ${parseSuccess}`);
-        if (parseWarnings.length > 0) {
-            console.warn(`${SCRIPT_VERSION}: Parsing warnings for ${sectionKey}:`, parseWarnings);
-        }
-    } catch (error) {
-        parseErrorObject = error;
-        parseSuccess = false;
-        console.error(`${SCRIPT_VERSION}: CRITICAL Error during ${sectionKey} parsing for profile ${profileNameToUse}:`, error);
-        const errorInfo = {
-            parseError: error.message,
-            errorStack: error.stack, // Good for debugging
-            attemptTime: new Date().toISOString(),
-            rawTextLength: rawText.length
+        const allProfilesData = await getStoredParsedData();
+        const currentProfileHolder = allProfilesData[profileUrl] || {
+            profileName: "Unknown Profile",
+            parsingResults: {},
+            rawTexts: {},
+            parsingMetadata: { lastUpdated: new Date().toISOString(), textLengths: {}, parsingAttempts: {} }
         };
-        // Store minimal structure on parse failure
-        if (sectionKey.toLowerCase() === SECTION_KEYS.PROFILE) currentProfileHolder.parsingResults.profileInfo = { name: profileNameToUse, ...errorInfo };
-        else if (sectionKey.toLowerCase() === SECTION_KEYS.POSTS) currentProfileHolder.parsingResults.posts = { postsAndRepostsByProfilePerson: [], ...errorInfo };
-        else if (sectionKey.toLowerCase() === SECTION_KEYS.COMMENTS) currentProfileHolder.parsingResults.comments = { commentsMadeByProfilePerson: [], ...errorInfo };
-        else if (sectionKey.toLowerCase() === SECTION_KEYS.REACTIONS) currentProfileHolder.parsingResults.reactions = { reactionsMadeByProfilePerson: [], ...errorInfo };
-    }
 
-    currentProfileHolder.parsingMetadata[`${attemptKey}ParseSuccess`] = parseSuccess;
-    currentProfileHolder.parsingMetadata[`${attemptKey}ParseWarnings`] = parseWarnings;
-    if (parseErrorObject) {
-        currentProfileHolder.parsingMetadata[`${attemptKey}ParseError`] = parseErrorObject.message;
-    }
+        if (!currentProfileHolder.parsingMetadata) {
+            currentProfileHolder.parsingMetadata = { lastUpdated: new Date().toISOString(), textLengths: {}, parsingAttempts: {} };
+        }
+        if (!currentProfileHolder.rawTexts) {
+            currentProfileHolder.rawTexts = {};
+        }
+        if (!currentProfileHolder.parsingResults) {
+             currentProfileHolder.parsingResults = {};
+        }
 
-    allProfilesData[profileUrl] = currentProfileHolder;
-    try {
-        await setStoredParsedData(allProfilesData);
-    } catch (storageError) {
-        console.error(`${SCRIPT_VERSION}: Failed to save data to storage after parsing ${sectionKey}:`, storageError);
-        return `⚠️ ${sectionKey} parsed but FAILED TO SAVE to storage. Error: ${storageError.message}. Raw: ${rawText.length} chars.`;
-    }
-    
-    // Generate detailed success/failure message to be returned
-    let resultMessage;
-    const finalProfileNameForMessage = currentProfileHolder.profileName || profileNameToUse; // Use the most up-to-date name
+        let rawTextStorageKey = getRawTextKeyForSection(sectionKey);
+        if (!rawTextStorageKey) { // Fallback if sectionKey is not one of the main ones (e.g. from older versions or custom)
+            rawTextStorageKey = sectionKey.toLowerCase() + "Text";
+            if (sectionKey.toLowerCase() === SECTION_KEYS.PROFILE) rawTextStorageKey = "mainProfileText"; // Ensure consistency
+        }
 
-    if (parseSuccess) {
-        let itemDetails = '';
-        // Populate itemDetails based on parsedResult, similar to original logic
-        if (parsedResult) {
-           if (sectionKey.toLowerCase() === SECTION_KEYS.POSTS) itemDetails = ` (${parsedResult.postsAndRepostsByProfilePerson?.length || 0} posts/reposts)`;
-           else if (sectionKey.toLowerCase() === SECTION_KEYS.COMMENTS) itemDetails = ` (${parsedResult.commentsMadeByProfilePerson?.length || 0} comments)`;
-           else if (sectionKey.toLowerCase() === SECTION_KEYS.REACTIONS) itemDetails = ` (${parsedResult.reactionsMadeByProfilePerson?.length || 0} reactions)`;
-           else if (sectionKey.toLowerCase() === SECTION_KEYS.PROFILE) {
-               const expCount = parsedResult.experience?.length || 0;
-               const eduCount = parsedResult.education?.length || 0;
-               const skillsCount = parsedResult.skills?.length || 0;
-               itemDetails = ` (${expCount} exp, ${eduCount} edu, ${skillsCount} skills)`;
+        currentProfileHolder.rawTexts[rawTextStorageKey] = rawText;
+        currentProfileHolder.parsingMetadata.textLengths[rawTextStorageKey] = rawText.length;
+        currentProfileHolder.parsingMetadata.lastUpdated = new Date().toISOString();
+
+        const attemptKey = sectionKey.toLowerCase();
+        currentProfileHolder.parsingMetadata.parsingAttempts[attemptKey] = (currentProfileHolder.parsingMetadata.parsingAttempts[attemptKey] || 0) + 1;
+        currentProfileHolder.parsingMetadata[`${attemptKey}DifyRefined`] = false;
+        currentProfileHolder.parsingMetadata[`${attemptKey}DifyRefinementError`] = null;
+        currentProfileHolder.parsingMetadata[`${attemptKey}DifyWorkflowRunId`] = null;
+
+        let profileNameForParserContext = currentProfileHolder.profileName;
+
+        if (sectionKey.toLowerCase() === SECTION_KEYS.PROFILE) {
+            const extractedNameFromProfilePageText = extractProfileNameFromText(rawText);
+            if (extractedNameFromProfilePageText !== "Unknown Profile") {
+                const cleanedExtractedName = effectiveCleanProfileNameFn(extractedNameFromProfilePageText);
+                if (profileNameForParserContext === "Unknown Profile" || profileNameForParserContext !== cleanedExtractedName) {
+                    profileNameForParserContext = cleanedExtractedName;
+                    currentProfileHolder.profileName = profileNameForParserContext;
+                    console.log(`${SCRIPT_VERSION}: HSCTAP - Profile name for ${profileUrl} tentatively set to "${currentProfileHolder.profileName}" by text extraction.`);
+                }
+            }
+        }
+        // Ensure profileNameForParserContext is always the cleaned version of the current best guess for the profile name
+        profileNameForParserContext = effectiveCleanProfileNameFn(currentProfileHolder.profileName || "Unknown Profile");
+
+
+        let parsedResult = null;
+        let parseSuccess = false;
+        let parseErrorObject = null;
+        let parseWarnings = [];
+        const startTime = Date.now();
+        const PARSING_TIMEOUT_MS = 10000; // Increased timeout
+        const parsedResultStorageKey = getParsedResultKeyForSection(sectionKey);
+
+        console.log(`${SCRIPT_VERSION}: HSCTAP: Parsing ${sectionKey}. Profile Name (for Parser Context): "${profileNameForParserContext}" for Profile URL: ${profileUrl}`);
+        try {
+            const lowerSectionKey = sectionKey.toLowerCase();
+            let parserFunctionWrapper;
+
+            if (lowerSectionKey === SECTION_KEYS.PROFILE) parserFunctionWrapper = safeParseProfileInfo;
+            else if (lowerSectionKey === SECTION_KEYS.POSTS) parserFunctionWrapper = safeParsePosts;
+            else if (lowerSectionKey === SECTION_KEYS.COMMENTS) parserFunctionWrapper = safeParseComments;
+            else if (lowerSectionKey === SECTION_KEYS.REACTIONS) parserFunctionWrapper = safeParseReactions;
+            else {
+                throw new Error(`Unknown sectionKey '${sectionKey}' for parsing.`);
+            }
+
+            try {
+                 parsedResult = await parseWithTimeout(parserFunctionWrapper, rawText, profileNameForParserContext, sectionKey.toUpperCase(), PARSING_TIMEOUT_MS);
+            } catch (errorFromTimeout) {
+                parseErrorObject = errorFromTimeout;
+                parsedResult = null; // Ensure parsedResult is null on timeout
+            }
+
+
+            if (parsedResult) { // If parser ran and returned something (even if it's an empty structure)
+                if (lowerSectionKey === SECTION_KEYS.PROFILE) {
+                    if (parsedResult.name && parsedResult.name !== "Unknown Profile" && parsedResult.name !== "See Featured Section") {
+                        const parserExtractedName = effectiveCleanProfileNameFn(parsedResult.name);
+                        if (currentProfileHolder.profileName === "Unknown Profile" ||
+                            currentProfileHolder.profileName === "See Featured Section" ||
+                            currentProfileHolder.profileName !== parserExtractedName) {
+                            currentProfileHolder.profileName = parserExtractedName;
+                            profileNameForParserContext = parserExtractedName; // Update context for subsequent steps if any within this fn
+                            console.log(`${SCRIPT_VERSION}: HSCTAP - Profile name for ${profileUrl} confirmed/updated to "${currentProfileHolder.profileName}" by profile parser.`);
+                        }
+                    }
+                     // If parser didn't find a name, but we had one from text extraction, use that in the result.
+                    if ((!parsedResult.name || parsedResult.name === "Unknown Profile" || parsedResult.name === "See Featured Section") &&
+                        (profileNameForParserContext !== "Unknown Profile" && profileNameForParserContext !== "See Featured Section")) {
+                        parsedResult.name = profileNameForParserContext;
+                    }
+
+                    if (!parsedResult.headline) parseWarnings.push("Headline not identified in profile text.");
+                    if (!parsedResult.experience || parsedResult.experience.length === 0) parseWarnings.push("No experience entries identified.");
+                    if (!parsedResult.education || parsedResult.education.length === 0) parseWarnings.push("No education entries identified.");
+                } else if (lowerSectionKey === SECTION_KEYS.POSTS) {
+                    if (!parsedResult.postsAndRepostsByProfilePerson || parsedResult.postsAndRepostsByProfilePerson.length === 0) {
+                         parseWarnings.push(`No posts/reposts identified in ${sectionKey} text.`);
+                    }
+                } else if (lowerSectionKey === SECTION_KEYS.COMMENTS) {
+                     if (!parsedResult.commentsMadeByProfilePerson || parsedResult.commentsMadeByProfilePerson.length === 0) {
+                         parseWarnings.push(`No comments identified in ${sectionKey} text.`);
+                    }
+                } else if (lowerSectionKey === SECTION_KEYS.REACTIONS) {
+                     if (!parsedResult.reactionsMadeByProfilePerson || parsedResult.reactionsMadeByProfilePerson.length === 0) {
+                         parseWarnings.push(`No reactions identified in ${sectionKey} text.`);
+                    }
+                }
+                if(parsedResultStorageKey) currentProfileHolder.parsingResults[parsedResultStorageKey] = parsedResult;
+                parseSuccess = true; // Considered success if parser ran without throwing and returned a structure
+            } else if (parseErrorObject) { // If parseWithTimeout threw or resulted in null due to timeout/error
+                 parseSuccess = false;
+            } else { // Parser returned null/undefined without an explicit error object (should be rare with current setup)
+                parseSuccess = false;
+                parseWarnings.push(`Parser for ${sectionKey} returned no result without explicit error.`);
+            }
+
+            const parseTime = Date.now() - startTime;
+            console.log(`${SCRIPT_VERSION}: HSCTAP: Parsing phase for ${sectionKey} (Profile URL: ${profileUrl}) completed in ${parseTime}ms. Success: ${parseSuccess}. Warnings: ${parseWarnings.join(", ")}`);
+            if (parseWarnings.length > 0) console.warn(`${SCRIPT_VERSION}: HSCTAP: Parsing warnings for ${sectionKey} (Profile URL: ${profileUrl}):`, parseWarnings);
+
+        } catch (error) { // Catch errors from the main try block (e.g., unknown sectionKey)
+            parseErrorObject = error; parseSuccess = false;
+            console.error(`${SCRIPT_VERSION}: HSCTAP: Error during main parsing structure for ${sectionKey} (Profile URL: ${profileUrl}):`, error);
+        }
+
+        if (!parseSuccess && parsedResultStorageKey) {
+            const errorMsgToStore = parseErrorObject ? parseErrorObject.message : `Parsing ${sectionKey} text was not successful.`;
+            const errorInfo = {
+                parseError: errorMsgToStore,
+                parseErrorTimestamp: new Date().toISOString(),
+                parseErrorStack: parseErrorObject?.stack?.substring(0, 500)
+            };
+            // Ensure a default structure exists even on error, especially for activity sections
+            if (!currentProfileHolder.parsingResults[parsedResultStorageKey]) {
+                const defaultNameForErrorObject = sectionKey.toLowerCase() === SECTION_KEYS.PROFILE ? profileNameForParserContext : "N/A for activity section";
+                if (sectionKey.toLowerCase() === SECTION_KEYS.PROFILE) currentProfileHolder.parsingResults[parsedResultStorageKey] = { name: defaultNameForErrorObject, headline: null, ...errorInfo };
+                else if (sectionKey.toLowerCase() === SECTION_KEYS.POSTS) currentProfileHolder.parsingResults[parsedResultStorageKey] = { postsAndRepostsByProfilePerson: [], ...errorInfo };
+                else if (sectionKey.toLowerCase() === SECTION_KEYS.COMMENTS) currentProfileHolder.parsingResults[parsedResultStorageKey] = { commentsMadeByProfilePerson: [], ...errorInfo };
+                else if (sectionKey.toLowerCase() === SECTION_KEYS.REACTIONS) currentProfileHolder.parsingResults[parsedResultStorageKey] = { reactionsMadeByProfilePerson: [], ...errorInfo };
+                else currentProfileHolder.parsingResults[parsedResultStorageKey] = { ...errorInfo }; // Generic error object
+            } else { // If some partial data was there, merge error info
+                currentProfileHolder.parsingResults[parsedResultStorageKey] = { ...currentProfileHolder.parsingResults[parsedResultStorageKey], ...errorInfo};
+            }
+        }
+
+        currentProfileHolder.parsingMetadata[`${attemptKey}ParseSuccess`] = parseSuccess;
+        currentProfileHolder.parsingMetadata[`${attemptKey}ParseWarnings`] = parseWarnings;
+        if (parseErrorObject) {
+            currentProfileHolder.parsingMetadata[`${attemptKey}ParseError`] = parseErrorObject.message;
+        } else if (!parseSuccess && parsedResultStorageKey && !currentProfileHolder.parsingResults[parsedResultStorageKey]?.parseError) {
+            currentProfileHolder.parsingMetadata[`${attemptKey}ParseError`] = `Parsing ${sectionKey} completed, but result was not considered valid or successful.`;
+        }
+
+
+        allProfilesData[profileUrl] = currentProfileHolder;
+
+        try {
+            await setStoredParsedData(allProfilesData);
+        } catch (storageError) {
+            console.error(`${SCRIPT_VERSION}: HSCTAP: Failed to save data to storage for Profile URL ${profileUrl}, section ${sectionKey}:`, storageError);
+            return `⚠️ ${sectionKey} parsed but FAILED TO SAVE to storage. Error: ${storageError.message}. Raw: ${rawText.length} chars.`;
+        }
+
+        let resultMessage;
+        if (parseSuccess && parsedResultStorageKey) {
+            let itemDetails = '';
+            const currentResultsForSection = currentProfileHolder.parsingResults[parsedResultStorageKey];
+            if (currentResultsForSection) {
+               const lowerSectionKey = sectionKey.toLowerCase();
+               if (lowerSectionKey === SECTION_KEYS.POSTS) itemDetails = ` Found: ${currentResultsForSection.postsAndRepostsByProfilePerson?.length || 0} potential posts/reposts.`;
+               else if (lowerSectionKey === SECTION_KEYS.COMMENTS) itemDetails = ` Found: ${currentResultsForSection.commentsMadeByProfilePerson?.length || 0} potential comments.`;
+               else if (lowerSectionKey === SECTION_KEYS.REACTIONS) itemDetails = ` Found: ${currentResultsForSection.reactionsMadeByProfilePerson?.length || 0} potential reactions.`;
+               else if (lowerSectionKey === SECTION_KEYS.PROFILE && currentResultsForSection) {
+                   const expCount = currentResultsForSection.experience?.length || 0;
+                   const eduCount = currentResultsForSection.education?.length || 0;
+                   const skillsCount = currentResultsForSection.skills?.length || 0;
+                   const actualName = (currentResultsForSection.name && currentResultsForSection.name !== "Unknown Profile" && currentResultsForSection.name !== "See Featured Section") ? ` (Name: ${currentResultsForSection.name.substring(0,25)})` : "";
+                   itemDetails = ` Profile details extracted${actualName}. Exp: ${expCount}, Edu: ${eduCount}, Skills: ${skillsCount}.`;
+               }
            }
-       }
-        const warningText = parseWarnings.length > 0 ? ` Warnings: ${parseWarnings.length}` : '';
-        resultMessage = `✅ ${sectionKey} successfully parsed for ${finalProfileNameForMessage}${itemDetails}.${warningText} Raw: ${rawText.length} chars.`;
-        console.log(`${SCRIPT_VERSION}: ${resultMessage}`);
-    } else {
-        resultMessage = `⚠️ ${sectionKey} raw text saved but PARSING FAILED for ${finalProfileNameForMessage}. Error: ${parseErrorObject?.message || 'unknown error during parse'}. Raw: ${rawText.length} chars.`;
-        console.warn(`${SCRIPT_VERSION}: ${resultMessage}`);
-    }
-    return resultMessage;
-}
+            const warningText = parseWarnings.length > 0 ? ` Warnings: ${parseWarnings.join("; ")}` : '';
+            resultMessage = `✅ ${sectionKey} data processed.${itemDetails}${warningText} Raw: ${rawText.length} chars. (Profile ID: ${profileUrl.slice(-15)})`;
+        } else {
+            const finalErrorMsg = currentProfileHolder.parsingMetadata[`${attemptKey}ParseError`] || parseErrorObject?.message || 'unknown error during parse';
+            resultMessage = `⚠️ ${sectionKey} raw text saved for Profile ID ${profileUrl.slice(-15)}, but PARSING FAILED. Error: ${finalErrorMsg}. Raw: ${rawText.length} chars.`;
+        }
 
+        console.log(`${SCRIPT_VERSION}: HSCTAP completed for Profile URL ${profileUrl}. Returning: ${resultMessage.substring(0,250)}`);
+        return resultMessage;
+    } catch (outerError) {
+        console.error(`${SCRIPT_VERSION}: HSCTAP: FATAL outer error for Profile URL ${profileUrl}, section ${sectionKey}:`, outerError);
+        return `⚠️ ${sectionKey} processing FAILED (outer): ${outerError.message}`;
+    }
+}
 
 async function handleInitiateCurrentPageTextCollection(request, sender) {
-   const { profileUrl, pathKey } = request;
-   if (!profileUrl || !pathKey) {
-       const errorMsg = "URL or pathKey missing for current page text collection.";
-       const tabId = request.tabId || sender.tab?.id; // Get tabId here for potential UI update
+    const { profileUrl, pathKey } = request;
+    const tabId = request.tabId || sender.tab?.id;
 
-       console.error(`${SCRIPT_VERSION}: handleInitiateCurrentPageTextCollection - ERROR: ${errorMsg}`);
-       if(tabId) updateUIs(errorMsg, "error", tabId); // Update UI if tabId is available
-       return { success: false, error: errorMsg }; // Return error object
-   }
-   if (!tabId) {
-       const errorMsg = "No tab ID available for current page text collection.";
-       console.error(`${SCRIPT_VERSION}: handleInitiateCurrentPageTextCollection - ERROR: No Tab ID.`);
-       // Cannot update specific tab UI, but error will be sent back to popup/caller
-       return { success: false, error: errorMsg }; // Return error object
-   }
+    if (!profileUrl || !pathKey) {
+        const errorMsg = "URL or pathKey missing for HICPTextCollection.";
+        console.error(`${SCRIPT_VERSION}: HICPTextCollection - ERROR: ${errorMsg}`);
+        if (tabId) updateUIs(errorMsg, "error", tabId);
+        return { success: false, error: errorMsg };
+    }
+    if (!tabId) {
+        const errorMsg = "No tab ID for HICPTextCollection.";
+        console.error(`${SCRIPT_VERSION}: HICPTextCollection - ERROR: No Tab ID.`);
+        return { success: false, error: errorMsg };
+    }
 
-   const tabId = request.tabId || sender.tab?.id; // Ensure tabId is available after the checks
+    updateUIs(`Extracting text from current ${pathKey} page...`, "info", tabId);
+    let responseForSendResponse;
+    try {
+        let responseFromContent;
+        try {
+            // Add a timeout for the message to content script
+            responseFromContent = await withTimeout(
+                chrome.tabs.sendMessage(tabId, { action: 'extractRawTextForSection', pathKey: pathKey, profileUrl: profileUrl }),
+                15000, // 15 second timeout for content script to respond
+                `Timeout waiting for content script on tab ${tabId} to extract text for ${pathKey}.`
+            );
+        } catch (sendMessageError) {
+            console.error(`${SCRIPT_VERSION}: HICPTextCollection: chrome.tabs.sendMessage FAILED or TIMED OUT for tab ${tabId}, pathKey ${pathKey}. Error:`, sendMessageError);
+            updateUIs(`Error communicating with content script: ${sendMessageError.message.substring(0,150)}`, "error", tabId);
+            return { success: false, error: `Failed to send message to/receive from content script: ${sendMessageError.message}` };
+        }
 
-   updateUIs(`Extracting text from current ${pathKey} page...`, "info", tabId);
-   try {
-       console.log(`${SCRIPT_VERSION}: Sending 'extractRawTextForSection' to tab ${tabId} for pathKey '${pathKey}'.`);
-       const responseFromContent = await chrome.tabs.sendMessage(tabId, {
-           action: 'extractRawTextForSection',
-           pathKey: pathKey,
-           profileUrl: profileUrl
-       });
-       console.log(`${SCRIPT_VERSION}: Response from content script for 'extractRawTextForSection':`, responseFromContent);
+        if (responseFromContent && typeof responseFromContent === 'object') {
+            if (responseFromContent.success && typeof responseFromContent.text === 'string') {
+                let saveParseMessage;
+                try {
+                    saveParseMessage = await handleSaveCapturedTextAndParse(responseFromContent.profileUrl, responseFromContent.pathKey, responseFromContent.text);
+                } catch (parseProcessingError) {
+                    console.error(`${SCRIPT_VERSION}: HICPTextCollection: Error in HSCTAP call:`, parseProcessingError);
+                    saveParseMessage = `⚠️ ${pathKey} processing error in HSCTAP: ${parseProcessingError.message}`;
+                }
 
-       if (responseFromContent && responseFromContent.success && typeof responseFromContent.text === 'string') {
-           // Call handleSaveCapturedTextAndParse and get its result message
-           const saveParseMessage = await handleSaveCapturedTextAndParse(responseFromContent.profileUrl, responseFromContent.pathKey, responseFromContent.text);
-           
-           // Determine overall status based on the message from save/parse
-           let overallStatusType = "success";
-           if (saveParseMessage.toLowerCase().startsWith('⚠️') || saveParseMessage.toLowerCase().includes('failed')) {
-               overallStatusType = "error"; // Or "warning" if only minor issues
-           }
-           const UIMessage = `${pathKey} page processed. Result: ${saveParseMessage}`;
-           updateUIs(UIMessage, overallStatusType, tabId);
-           // Even if parsing failed, collection of raw text was a "success" from message passing POV
-           // The details of parsing are in the message.
-           return { success: true, message: UIMessage, details: saveParseMessage };
-       } else {
-           const contentError = responseFromContent?.error || 'Content script failed to return valid text or success flag.';
-           console.error(`${SCRIPT_VERSION}: handleInitiateCurrentPageTextCollection - Content script ERROR: ${contentError}`);
-           updateUIs(`Content script error: ${contentError.substring(0,150)}`, "error", tabId);
-           return { success: false, error: contentError }; // Return error object
-       }
-   } catch (e) {
-       // This catches errors from chrome.tabs.sendMessage or unhandled errors in handleSaveCapturedTextAndParse
-       console.error(`${SCRIPT_VERSION}: CRITICAL Error during 'handleInitiateCurrentPageTextCollection' for ${pathKey} on tab ${tabId}:`, e);
-       const errorMessage = e.message || "Unknown error in text collection process.";
-       updateUIs(`Error collecting page data: ${errorMessage.substring(0, 150)}`, "error", tabId);
-       return { success: false, error: errorMessage }; // Return error object
-   }
+                let overallStatusType = "success"; // Default to success
+                // Check message for failure/warning indicators
+                const lowerSaveParseMessage = saveParseMessage.toLowerCase();
+                if (lowerSaveParseMessage.includes('⚠️') || lowerSaveParseMessage.includes('failed')) overallStatusType = "error";
+                else if (lowerSaveParseMessage.includes('warning')) overallStatusType = "warning";
+
+
+                const UIMessage = `${pathKey} page processed. Result: ${saveParseMessage}`;
+                updateUIs(UIMessage, overallStatusType, tabId);
+                responseForSendResponse = { success: overallStatusType !== 'error', message: UIMessage, details: saveParseMessage };
+            } else { // Content script reported failure or invalid response
+                const contentError = responseFromContent.error || 'Content script failed to return valid text or success flag.';
+                console.error(`${SCRIPT_VERSION}: HICPTextCollection - Content script execution ERROR: ${contentError}`);
+                updateUIs(`Content script error: ${contentError.substring(0,150)}`, "error", tabId);
+                responseForSendResponse = { success: false, error: contentError };
+            }
+        } else { // Invalid or empty response object from content script
+            const commsError = 'Invalid or empty response from content script.';
+            console.error(`${SCRIPT_VERSION}: HICPTextCollection - Content script communication ERROR: ${commsError}`, responseFromContent);
+            updateUIs(`Content script communication error.`, "error", tabId);
+            responseForSendResponse = { success: false, error: commsError };
+        }
+
+    } catch (e) { // Outer catch for handleInitiateCurrentPageTextCollection
+        console.error(`${SCRIPT_VERSION}: HICPTextCollection: CRITICAL outer Error for ${pathKey} on tab ${tabId}:`, e);
+        const errorMessage = e.message || "Unknown error in text collection process.";
+        updateUIs(`Error collecting page data: ${errorMessage.substring(0, 150)}`, "error", tabId);
+        responseForSendResponse = { success: false, error: errorMessage };
+    }
+    return responseForSendResponse;
 }
+
 
 async function handleDownloadCollectedDataFile(sourceTabId) {
    console.log(`${SCRIPT_VERSION}: handleDownloadCollectedDataFile initiated.`);
    const allProfilesData = await getStoredParsedData();
    if (Object.keys(allProfilesData).length === 0) {
        const msg = "No data collected to download.";
-       updateUIs(msg, "warning", sourceTabId);
-       // This function is expected to return a promise that resolves to an object for sendResponse
-       // So, instead of throwing, return a failure object.
+       if (sourceTabId) updateUIs(msg, "warning", sourceTabId);
        return { success: false, error: msg };
    }
-   
    const downloadableFileContent = {
-     version: "v2-robust-parsing-FIXED", // Updated version
+     version: SCRIPT_VERSION, // Use dynamic script version
      generatedAt: new Date().toISOString(),
      masterInstructions: MASTER_INSTRUCTIONS_TEXT,
      prompts: { profile: PROFILE_PROMPT_TEXT, posts: POSTS_PROMPT_TEXT, comments: COMMENTS_PROMPT_TEXT, reactions: REACTIONS_PROMPT_TEXT },
      collectedData: allProfilesData,
      parsingStats: generateDetailedParsingStats(allProfilesData)
    };
-   
    const fileContentString = JSON.stringify(downloadableFileContent, null, 2);
    const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(fileContentString);
    const currentDate = new Date().toISOString().split('T')[0];
-   const filename = `linkedin_collected_data_robust_fixed_${currentDate}.json`;
+   const filename = `linkedin_collected_data_dify_${currentDate}.json`;
+   console.log(`${SCRIPT_VERSION}: Preparing download of '${filename}'.`);
 
-   console.log(`${SCRIPT_VERSION}: Preparing download of '${filename}'. Data URL length: ${dataUrl.length}.`);
-
-   // Return a promise that resolves or rejects for the .then/.catch in the message listener
-   return new Promise((resolve, reject) => {
-       chrome.downloads.download({
-         url: dataUrl,
-         filename: filename,
-         saveAs: true
-       }, (downloadId) => {
+   return new Promise((resolve) => {
+       chrome.downloads.download({ url: dataUrl, filename: filename, saveAs: true }, (downloadId) => {
          if (chrome.runtime.lastError) {
            const errorMsg = `Download API error: ${chrome.runtime.lastError.message}`;
            console.error(`${SCRIPT_VERSION}: ${errorMsg}`);
-           // Instead of rejecting, we ensure the caller gets a structured error.
-           // The outer .catch in the listener will handle this if we reject.
-           // For consistency, we can resolve with a failure object or reject. Let's try resolving.
            resolve({ success: false, error: errorMsg });
          } else if (typeof downloadId === 'undefined') {
-            const errorMsg = "Download did not start (downloadId is undefined).";
+            const errorMsg = "Download did not start (downloadId is undefined). Check extension permissions and browser settings.";
             console.error(`${SCRIPT_VERSION}: ${errorMsg}`);
             resolve({ success: false, error: errorMsg });
          } else {
-           const successMsg = "Enhanced data file download initiated!";
+           const successMsg = "Enhanced data file (with Dify status) download initiated!";
            console.log(`${SCRIPT_VERSION}: ${successMsg} ID: ${downloadId}`);
-           updateUIs(successMsg, "success", sourceTabId);
+           if (sourceTabId) updateUIs(successMsg, "success", sourceTabId);
            resolve({ success: true, message: successMsg, downloadId: downloadId });
          }
        });
    });
 }
 
-// generateDetailedParsingStats function remains the same...
 function generateDetailedParsingStats(allProfilesData) {
    const stats = {
        totalProfiles: Object.keys(allProfilesData).length,
        sectionsProcessed: 0,
-       parseResults: {
-           successful: 0,
-           failed: 0,
-           withWarnings: 0,
-           details: {}
-       },
-       dataQuality: {
-           avgTextLength: 0,
-           totalTextLength: 0,
-           sectionCoverage: {},
-           extractionRates: {}
-       }
+       parseResults: { successful: 0, failed: 0, withWarnings: 0, details: {} },
+       difyRefinement: { attempted: 0, successful: 0, failed: 0, skipped: 0, details: {} },
+       dataQuality: { avgTextLength: 0, totalTextLength: 0, sectionCoverage: {}, extractionRates: {} }
    };
-   let totalTextLength = 0;
-   const sectionCounts = { profile: 0, posts: 0, comments: 0, reactions: 0 };
-   const extractionSuccess = { profile: 0, posts: 0, comments: 0, reactions: 0 };
+   let totalTextLengthOverall = 0;
+   const sectionTypeCounts = { profile: 0, posts: 0, comments: 0, reactions: 0 };
+   const successfulExtractionCounts = { profile: 0, posts: 0, comments: 0, reactions: 0 };
 
    for (const [profileUrl, profileData] of Object.entries(allProfilesData)) {
-       const profileStats = {
-           profileName: profileData.profileName || "Unknown Profile", // Include profile name in stats detail
-           sections: {},
-           totalSections: 0,
-           warnings: 0,
-           textLengths: profileData.parsingMetadata?.textLengths || {},
-           lastUpdated: profileData.parsingMetadata?.lastUpdated,
-           parseErrors: {} // To store specific parse errors
+       const profileSpecificStats = {
+           profileName: profileData.profileName || "Unknown Profile",
+           sections: {}, totalSectionsOnProfile: 0, warningsOnProfile: 0,
+           textLengthsPerSection: profileData.parsingMetadata?.textLengths || {},
+           lastUpdatedOnProfile: profileData.parsingMetadata?.lastUpdated,
+           parseErrorsPerSection: {},
+           difyStatusPerSection: {}
        };
+       stats.difyRefinement.details[profileUrl] = { sections: {} };
 
        if (profileData.rawTexts) {
-           for (const [textKey, text] of Object.entries(profileData.rawTexts)) {
-               if (typeof text === 'string') totalTextLength += text.length;
+           for (const text of Object.values(profileData.rawTexts)) {
+               if (typeof text === 'string') totalTextLengthOverall += text.length;
            }
        }
 
-       if (profileData.parsingResults) {
-           for (const [section, result] of Object.entries(profileData.parsingResults)) {
-               profileStats.totalSections++;
-               stats.sectionsProcessed++;
-               const sectionKeyOriginal = section === 'profileInfo' ? 'profile' : section;
-               // Ensure sectionKeyOriginal is a valid key for sectionCounts and extractionSuccess
-               const sectionKey = SECTION_KEYS[sectionKeyOriginal.toUpperCase()] || sectionKeyOriginal;
+       const allPossibleSectionKeys = Object.values(SECTION_KEYS);
 
+       for (const sectionKey of allPossibleSectionKeys) {
+            const parsedResultKey = getParsedResultKeyForSection(sectionKey);
+            const result = profileData.parsingResults?.[parsedResultKey]; // This data is now unwrapped if Dify was used
+            const metadata = profileData.parsingMetadata;
+            const attemptKey = sectionKey.toLowerCase();
 
-               if (!sectionCounts.hasOwnProperty(sectionKey)) { // Initialize if not present
-                   sectionCounts[sectionKey] = 0;
-                   extractionSuccess[sectionKey] = 0;
-               }
-               sectionCounts[sectionKey]++;
+            let sectionStatusMessage = "not_processed";
+            let itemsCountString = "";
 
-               const metadataKey = sectionKeyOriginal === 'profileInfo' ? 'profile' : sectionKeyOriginal;
+            if (metadata?.parsingAttempts?.[attemptKey] > 0 || result) { // If parsing was attempted or a result exists
+                profileSpecificStats.totalSectionsOnProfile++;
+                stats.sectionsProcessed++;
+                sectionTypeCounts[sectionKey]++;
 
-               if (result && !result.parseError && profileData.parsingMetadata?.[`${metadataKey}ParseSuccess`]) { // Check success flag from metadata
-                   stats.parseResults.successful++;
-                   extractionSuccess[sectionKey]++;
-                   profileStats.sections[sectionKeyOriginal] = 'success';
-                   
-                   const warningKey = `${metadataKey}ParseWarnings`;
-                   if (profileData.parsingMetadata?.[warningKey]?.length > 0) {
-                       stats.parseResults.withWarnings++;
-                       profileStats.warnings += profileData.parsingMetadata[warningKey].length;
-                       profileStats.sections[sectionKeyOriginal] += ` (${profileData.parsingMetadata[warningKey].length} warnings)`;
-                   }
-                   // Count parsed items (remains same)
-                   if (section === 'posts' && result.postsAndRepostsByProfilePerson) profileStats.sections[sectionKeyOriginal] += ` (${result.postsAndRepostsByProfilePerson.length} items)`;
-                   else if (section === 'comments' && result.commentsMadeByProfilePerson) profileStats.sections[sectionKeyOriginal] += ` (${result.commentsMadeByProfilePerson.length} items)`;
-                   else if (section === 'reactions' && result.reactionsMadeByProfilePerson) profileStats.sections[sectionKeyOriginal] += ` (${result.reactionsMadeByProfilePerson.length} items)`;
-                   else if (section === 'profileInfo') {
-                       const expCount = result.experience?.length || 0;
-                       const eduCount = result.education?.length || 0;
-                       const skillsCount = result.skills?.length || 0;
-                       profileStats.sections[sectionKeyOriginal] += ` (${expCount} exp, ${eduCount} edu, ${skillsCount} skills)`;
-                   }
+                if (metadata?.[`${attemptKey}ParseSuccess`] && result && !result.parseError) {
+                    stats.parseResults.successful++;
+                    successfulExtractionCounts[sectionKey]++;
+                    sectionStatusMessage = 'parsed_success';
 
-               } else {
-                   stats.parseResults.failed++;
-                   const errorMsg = result?.parseError || profileData.parsingMetadata?.[`${metadataKey}ParseError`] || 'unknown error';
-                   profileStats.sections[sectionKeyOriginal] = `failed: ${errorMsg}`;
-                   profileStats.parseErrors[sectionKeyOriginal] = errorMsg;
-               }
-           }
+                    // Add item counts based on unwrapped structure
+                    if (sectionKey === SECTION_KEYS.PROFILE && result) {
+                        itemsCountString = ` (${result.experience?.length || 0} exp, ${result.education?.length || 0} edu, ${result.skills?.length || 0} skills)`;
+                    } else if (sectionKey === SECTION_KEYS.POSTS && result.postsAndRepostsByProfilePerson) {
+                        itemsCountString = ` (${result.postsAndRepostsByProfilePerson.length} items)`;
+                    } else if (sectionKey === SECTION_KEYS.COMMENTS && result.commentsMadeByProfilePerson) {
+                        itemsCountString = ` (${result.commentsMadeByProfilePerson.length} items)`;
+                    } else if (sectionKey === SECTION_KEYS.REACTIONS && result.reactionsMadeByProfilePerson) {
+                        itemsCountString = ` (${result.reactionsMadeByProfilePerson.length} items)`;
+                    }
+                    sectionStatusMessage += itemsCountString;
+
+                    const warningsArray = metadata?.[`${attemptKey}ParseWarnings`];
+                    if (warningsArray && warningsArray.length > 0) {
+                        stats.parseResults.withWarnings++;
+                        profileSpecificStats.warningsOnProfile += warningsArray.length;
+                        sectionStatusMessage += ` (${warningsArray.length} warnings)`;
+                    }
+                } else {
+                    stats.parseResults.failed++;
+                    const errorMsg = result?.parseError || metadata?.[`${attemptKey}ParseError`] || 'unknown parse error';
+                    sectionStatusMessage = `parsed_failed: ${errorMsg.substring(0, 100)}`;
+                    profileSpecificStats.parseErrorsPerSection[sectionKey] = errorMsg.substring(0, 200);
+                }
+            } else if (profileData.rawTexts?.[getRawTextKeyForSection(sectionKey)]) {
+                 sectionStatusMessage = "raw_text_only (not parsed)";
+                 // Not counted in sectionsProcessed or sectionTypeCounts if not parsed.
+            }
+            profileSpecificStats.sections[sectionKey] = sectionStatusMessage;
+
+            // Dify Refinement Status for this section
+            if (metadata) {
+                const difyRefinedFlag = metadata[`${sectionKey}DifyRefined`];
+                const difyError = metadata[`${sectionKey}DifyRefinementError`];
+                const difyRunId = metadata[`${sectionKey}DifyWorkflowRunId`];
+
+                let difyStatusForProfile = 'N/A';
+                if (typeof difyRefinedFlag !== 'undefined') {
+                    stats.difyRefinement.attempted++;
+                    if (difyRefinedFlag === true) {
+                        stats.difyRefinement.successful++;
+                        difyStatusForProfile = `AI Refined (ID: ${difyRunId || 'unknown'})`;
+                        profileSpecificStats.sections[sectionKey] += ' (AI Refined)';
+                    } else if (difyError) {
+                        stats.difyRefinement.failed++;
+                        difyStatusForProfile = `AI Refine Error: ${String(difyError).substring(0,50)} (ID: ${difyRunId || 'unknown'})`;
+                        profileSpecificStats.sections[sectionKey] += ` (AI Refine Error)`;
+                    } else {
+                        stats.difyRefinement.skipped++;
+                        difyStatusForProfile = 'AI Not Refined/Skipped';
+                    }
+                }
+                profileSpecificStats.difyStatusPerSection[sectionKey] = difyStatusForProfile;
+                stats.difyRefinement.details[profileUrl].sections[sectionKey] = {
+                    refined: difyRefinedFlag,
+                    error: difyError,
+                    runId: difyRunId
+                };
+            }
        }
-       stats.parseResults.details[profileUrl] = profileStats;
+       stats.parseResults.details[profileUrl] = profileSpecificStats;
    }
 
-   stats.dataQuality.totalTextLength = totalTextLength;
-   stats.dataQuality.avgTextLength = Math.round(totalTextLength / Math.max(stats.sectionsProcessed, 1));
-   
-   for (const [section, count] of Object.entries(sectionCounts)) {
-       if (count > 0) { // Only calculate if section was processed
-          stats.dataQuality.sectionCoverage[section] = count;
-          stats.dataQuality.extractionRates[section] = Math.round((extractionSuccess[section] / count) * 100);
-       } else {
-          stats.dataQuality.sectionCoverage[section] = 0;
-          stats.dataQuality.extractionRates[section] = 0;
-       }
+   stats.dataQuality.totalTextLength = totalTextLengthOverall;
+   stats.dataQuality.avgTextLength = stats.sectionsProcessed > 0 ? Math.round(totalTextLengthOverall / stats.sectionsProcessed) : 0;
+
+   for (const key of Object.values(SECTION_KEYS)) {
+       stats.dataQuality.sectionCoverage[key] = sectionTypeCounts[key] || 0;
+       stats.dataQuality.extractionRates[key] = sectionTypeCounts[key] > 0 ? Math.round((successfulExtractionCounts[key] / sectionTypeCounts[key]) * 100) : 0;
    }
    return stats;
 }
 
-
-// updateUIs function remains largely the same, ensure it's robust
 function updateUIs(message, type = "info", specificTabId = null) {
- console.log(`${SCRIPT_VERSION}: Updating UIs - Type: ${type.toUpperCase()}, Message: "${message ? message.substring(0,100) : 'N/A'}", Specific Tab: ${specificTabId || 'N/A'}`);
+  let updatedPopup = false, updatedSpecificTab = false, updatedOtherTabs = 0;
+  // Try to update popup
+  chrome.runtime.sendMessage({ action: 'updatePopupStatus', message: message, type: type })
+    .then(() => { updatedPopup = true; })
+    .catch(e => { /* Normal if popup closed, or if message channel closes during update */ });
 
- // Try to send to popup, catch error if it's closed
- chrome.runtime.sendMessage({ action: 'updatePopupStatus', message: message, type: type })
-   .catch(e => {
-     // console.warn(`${SCRIPT_VERSION}: Could not send status to popup (normal if closed): ${e.message}`);
-   });
+  const sendMessageToTab = (tabIdToUpdate, isPrimaryTarget) => {
+    if (typeof tabIdToUpdate !== 'number') return Promise.resolve(false); // Ensure tabId is a number
+    return chrome.tabs.sendMessage(tabIdToUpdate, { action: 'updateFloatingUIStatus', message: message, type: type })
+    .then(() => {
+      if (isPrimaryTarget) updatedSpecificTab = true; else updatedOtherTabs++;
+      return true;
+    })
+    .catch(e => {
+      // console.warn(`${SCRIPT_VERSION}: Could not send UI update to Tab ${tabIdToUpdate}. Error: ${e.message.substring(0,100)}`);
+      return false; // Tab might be closed or not have content script
+    });
+  };
 
- const sendMessageToTab = (tabIdToUpdate, isPrimaryTarget) => {
-   if (typeof tabIdToUpdate !== 'number') { // Check if tabId is a valid number
-       // console.warn(`${SCRIPT_VERSION}: sendMessageToTab called with invalid tabId: ${tabIdToUpdate}.`);
-       return;
-   }
-   // console.log(`${SCRIPT_VERSION}: Attempting to send 'updateFloatingUIStatus' to Tab ${tabIdToUpdate} (${isPrimaryTarget ? 'primary' : 'secondary'}).`);
-   chrome.tabs.sendMessage(tabIdToUpdate, { action: 'updateFloatingUIStatus', message: message, type: type })
-     .then(() => {
-       // console.log(`${SCRIPT_VERSION}: Successfully sent 'updateFloatingUIStatus' to Tab ${tabIdToUpdate}.`);
-     })
-     .catch(e => {
-       // This error is common if the content script isn't on the page or tab is closed.
-       // Avoid excessive logging for secondary targets unless debugging.
-       // const logFn = isPrimaryTarget ? console.error : console.warn;
-       // logFn(`${SCRIPT_VERSION}: ${isPrimaryTarget ? 'CRITICAL FAILURE' : 'Note'}: Could not send 'updateFloatingUIStatus' to Tab ${tabIdToUpdate}. Error: ${e.message}. Primary Target: ${isPrimaryTarget}`);
-     });
- };
+  // Update specific tab if ID provided
+  if (specificTabId) {
+    sendMessageToTab(specificTabId, true).then(success => {
+      if (!success) console.warn(`${SCRIPT_VERSION}: Failed to update primary tab ${specificTabId} floating UI (it might be closed or unresponsive).`);
+    });
+  }
 
- if (specificTabId) {
-   sendMessageToTab(specificTabId, true);
- }
-
- // Update other LinkedIn tabs (secondary)
- chrome.tabs.query({ url: "*://*.linkedin.com/*" }, (tabs) => {
-   if (chrome.runtime.lastError) {
-     // console.error(`${SCRIPT_VERSION}: Error querying tabs for floating UI update: ${chrome.runtime.lastError.message}`);
-     return;
-   }
-   // console.log(`${SCRIPT_VERSION}: Found ${tabs.length} LinkedIn tabs for potential secondary UI update.`);
-   tabs.forEach(tab => {
-     if (tab.id && tab.id !== specificTabId) {
-       sendMessageToTab(tab.id, false);
-     }
-   });
- });
+  // Update all other LinkedIn tabs
+  chrome.tabs.query({ url: "*://*.linkedin.com/*" }, (tabs) => {
+    if (chrome.runtime.lastError) {
+      console.warn(`${SCRIPT_VERSION}: Error querying tabs for UI update: ${chrome.runtime.lastError.message}`);
+      return;
+    }
+    if (tabs && tabs.length > 0) {
+        const updatePromises = tabs.filter(tab => tab.id && tab.id !== specificTabId) // Exclude already updated tab
+                                   .map(tab => sendMessageToTab(tab.id, false));
+        Promise.allSettled(updatePromises).then(() => { // Use allSettled to ensure all attempts complete
+          // console.log(`${SCRIPT_VERSION}: updateUIs distribution attempt completed.`);
+        });
+    }
+  });
 }
 
 chrome.runtime.onInstalled.addListener((details) => {
@@ -576,4 +1095,4 @@ chrome.runtime.onInstalled.addListener((details) => {
  }
 });
 
-console.log(`${SCRIPT_VERSION}: Service worker event listeners attached with robust parsing and error handling capabilities.`);
+console.log(`${SCRIPT_VERSION}: Service worker event listeners attached. Diagnostic logging enhanced.`);

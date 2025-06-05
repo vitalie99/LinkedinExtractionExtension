@@ -1,0 +1,287 @@
+app:
+  description: 'AI Agent to review, complete, and refine partially parsed LinkedIn data. It takes algorithmically parsed JSON, the full raw text, section type, and profile name, then uses an LLM to output a final, comprehensive JSON.'
+  icon: '🔍' # Icon changed to suggest "review" or "refine"
+  icon_background: '#AED6F1' # A different shade of blue
+  mode: workflow
+  name: 'LinkedIn Data Refiner Workflow'
+  use_icon_as_answer_icon: false
+dependencies: []
+kind: app
+version: 0.2.0 # Version updated
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+      - data:
+          sourceType: start
+          targetType: llm
+        id: edge_start_to_llm_refiner
+        source: 'start_linkedin_refiner'
+        sourceHandle: source
+        target: 'llm_linkedin_refiner'
+        targetHandle: target
+        type: custom
+      - data:
+          sourceType: llm
+          targetType: end
+        id: edge_llm_to_end_refiner
+        source: 'llm_linkedin_refiner'
+        sourceHandle: source
+        target: 'end_linkedin_refiner'
+        targetHandle: target
+        type: custom
+    nodes:
+      - data:
+          desc: 'Inputs: section type, profile name, the full raw text, and the initially parsed JSON string.'
+          selected: false
+          title: 'LinkedIn Data for Refinement'
+          type: start
+          variables:
+            - label: 'Section Type'
+              max_length: 100
+              options:
+                - 'profile'
+                - 'posts'
+                - 'comments'
+                - 'reactions'
+              required: true
+              type: select
+              variable: section_type
+            - label: "Profile Person's Name"
+              max_length: 200
+              required: true
+              type: text-input
+              variable: profile_person_name
+            - label: 'Raw Section Text (for reference)'
+              max_length: 300000
+              required: true
+              type: paragraph
+              variable: raw_section_text
+            - label: 'Initial Parsed JSON (as string)'
+              max_length: 300000 # JSON string can also be long
+              required: true
+              type: paragraph # Using paragraph for potentially long JSON string input
+              variable: initial_parsed_json
+        height: 280 # Adjusted height for new variable
+        id: 'start_linkedin_refiner'
+        position:
+          x: 50
+          y: 150
+        positionAbsolute:
+          x: 50
+          y: 150
+        selected: false
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 320
+      - data:
+          context:
+            enabled: false
+          desc: 'LLM node (OpenRouter Flash 1.5) to review, complete, and refine the initial JSON based on the raw text.'
+          model:
+            completion_params:
+              temperature: 0.0 # Minimal temperature for deterministic JSON
+              max_tokens: 8192
+            mode: chat
+            name: 'xai/grok-1.5-flash' # Using Flash 1.5 via OpenRouter
+            provider: 'openrouter'
+          prompt_template:
+            - role: system
+              text: |
+                You are an AI data refinement and completion assistant.
+                You will be given:
+                1. `section_type`: The type of LinkedIn data being processed (e.g., 'profile', 'posts'). Current value: {{#start_linkedin_refiner.section_type#}}
+                2. `profile_person_name`: The name of the LinkedIn profile owner. Current value: {{#start_linkedin_refiner.profile_person_name#}}
+                3. `initial_parsed_json`: A JSON string representing data already partially parsed by an algorithm. This is your starting point.
+                4. `raw_section_text`: The full raw text from LinkedIn, which serves as the ultimate source of truth.
+
+                Your task is to:
+                A. Carefully parse the `initial_parsed_json` string into its object structure.
+                B. Review this initial JSON structure against the TARGET JSON STRUCTURE for the given `section_type` (provided below).
+                C. Identify any missing fields, `null` values, empty arrays (`[]`), or incomplete information in the `initial_parsed_json` when compared to what could be present based on the `raw_section_text` and the TARGET JSON STRUCTURE.
+                D. For all such identified gaps, inaccuracies, or incomplete sections in the `initial_parsed_json`, meticulously search the `raw_section_text` to find the correct and complete information.
+                E. Populate or replace the corresponding fields in the initial JSON data with your new, more accurate findings from the `raw_section_text`. Ensure all data conforms to the types and structures specified in the TARGET JSON STRUCTURE.
+                F. For descriptive text fields (like 'about', 'experience descriptions', 'post content', 'recommendation text'), if you encounter clearly duplicated paragraphs or large blocks of identical text appearing consecutively in the `raw_section_text`, ensure only ONE instance of that unique text is included in the final JSON.
+                G. The final output MUST be a single, valid, complete, and accurate JSON object. Do NOT include any explanations, notes, markdown formatting, or any text before or after the JSON object.
+
+                ---BEGIN TARGET JSON STRUCTURES AND RAW TEXT PER SECTION---
+
+                ---IF section_type IS 'profile' START---
+                TARGET JSON STRUCTURE (Profile):
+                The root of the JSON output must be an object containing the following keys:
+                - "name": (String) Full name of the person.
+                - "headline": (String) Professional headline.
+                - "currentCompany": (String) Current primary company.
+                - "location": (String) City, State/Country.
+                - "followers": (Number/String) Count of followers.
+                - "connections": (String) Number of connections (e.g., "500+").
+                - "mutualConnections": (Array of Strings) Mutual connection names.
+                - "about": (String) Complete 'About' section text, deduplicated.
+                - "experience": (Array of Objects) Each with:
+                    - "title": (String) Job title.
+                    - "company": (String) Company name.
+                    - "duration": (String) Date range (e.g., 'Jan 2020 - Present').
+                    - "totalDuration": (String) Total time (e.g., '4 yrs 5 mos').
+                    - "location": (String) Job location.
+                    - "description": (String) Role description, deduplicated.
+                - "education": (Array of Objects) Each with:
+                    - "school": (String) School/university name.
+                    - "degree": (String) Degree type.
+                    - "fieldOfStudy": (String) Field of study.
+                    - "years": (String) Years attended.
+                - "skills": (Array of Objects) Each with:
+                    - "name": (String) Skill name.
+                    - "endorsementsCount": (Number) Endorsement count.
+                    - "endorsedBySummary": (Array of Strings) Endorser descriptions.
+                - "recommendations": (Object) With keys:
+                    - "received": (Array of Objects) Each: "recommenderName" (String), "recommenderTitle" (String), "date" (String), "text" (String, deduplicated).
+                    - "given": (Array of Objects) Each: "recommendedName" (String), "recommendedTitle" (String), "date" (String), "text" (String, deduplicated).
+                - "interests": (Object) With keys:
+                    - "topVoices": (Array of Objects) Each: "name" (String), "headline" (String), "followers" (String/Number).
+                    - "companies": (Array of Objects) Each: "name" (String), "industry" (String), "followers" (String/Number).
+                    - "groups": (Array of Objects) Each: "name" (String), "members" (String/Number).
+
+                INITIAL PARSED JSON (Profile):
+                {{#start_linkedin_refiner.initial_parsed_json#}}
+
+                RAW TEXT FOR REFERENCE (Profile):
+                {{#start_linkedin_refiner.raw_section_text#}}
+                ---IF section_type IS 'profile' END---
+
+                ---IF section_type IS 'posts' START---
+                TASK: Review and complete parsing for posts and reposts by {{#start_linkedin_refiner.profile_person_name#}}.
+                TARGET JSON STRUCTURE (Posts):
+                Root key "postsAndRepostsByProfilePerson" (Array of Objects). Each object:
+                - "activityId": (String) Unique ID.
+                - "activityType": (String) "original_post" or "repost".
+                - "timestampOfActivity": (String) Timestamp of {{#start_linkedin_refiner.profile_person_name#}}'s activity.
+                - "authoredContentByProfilePerson": (String) Content by {{#start_linkedin_refiner.profile_person_name#}}, deduplicated.
+                - "engagementOnActivity": (Object) {"likes": Number/String, "commentsCount": Number/String, "repostsCount": Number/String} for {{#start_linkedin_refiner.profile_person_name#}}'s activity.
+                - "originalPostIfReposted": (Object or null) If repost, describes original:
+                    - "originalAuthorName": (String).
+                    - "originalAuthorHeadline": (String).
+                    - "originalPostTimestamp": (String).
+                    - "originalPostContent": (String) Deduplicated.
+                    - "originalPostEngagement": (Object) {"likes", "commentsCount", "repostsCount"} for original post.
+                - "mentionsByProfilePerson": (Array of Objects) Each {"name": String, "link": String/null}.
+                - "hashtagsByProfilePerson": (Array of Strings) Hashtags by {{#start_linkedin_refiner.profile_person_name#}}.
+                - "mediaAttached": (Array of Objects) Each {"type": String, "description": String/link}.
+
+                INITIAL PARSED JSON (Posts):
+                {{#start_linkedin_refiner.initial_parsed_json#}}
+
+                RAW TEXT FOR REFERENCE (Posts):
+                {{#start_linkedin_refiner.raw_section_text#}}
+                ---IF section_type IS 'posts' END---
+
+                ---IF section_type IS 'comments' START---
+                TASK: Review and complete parsing for comments made by {{#start_linkedin_refiner.profile_person_name#}}.
+                TARGET JSON STRUCTURE (Comments):
+                Root key "commentsMadeByProfilePerson" (Array of Objects). Each object:
+                - "commentId": (String) Unique ID.
+                - "commentText": (String) Comment by {{#start_linkedin_refiner.profile_person_name#}}, deduplicated.
+                - "commentTimestamp": (String) Timestamp of {{#start_linkedin_refiner.profile_person_name#}}'s comment.
+                - "likesOnComment": (Number/String) Likes on {{#start_linkedin_refiner.profile_person_name#}}'s comment.
+                - "onOriginalPost": (Object) Describes post commented on:
+                    - "author": (String) Original post author.
+                    - "authorHeadline": (String).
+                    - "timestamp": (String) Original post timestamp.
+                    - "contentSnippet": (String) Brief snippet of original post.
+                - "isReplyTo": (Object or null) If reply, describes comment replied to:
+                    - "author": (String) Author of comment replied to.
+                    - "commentSnippet": (String) Brief snippet of comment replied to.
+
+                INITIAL PARSED JSON (Comments):
+                {{#start_linkedin_refiner.initial_parsed_json#}}
+
+                RAW TEXT FOR REFERENCE (Comments):
+                {{#start_linkedin_refiner.raw_section_text#}}
+                ---IF section_type IS 'comments' END---
+
+                ---IF section_type IS 'reactions' START---
+                TASK: Review and complete parsing for reactions made by {{#start_linkedin_refiner.profile_person_name#}}.
+                TARGET JSON STRUCTURE (Reactions):
+                Root key "reactionsMadeByProfilePerson" (Array of Objects). Each object:
+                - "reactionId": (String) Unique ID.
+                - "reactionType": (String) e.g., "liked", "celebrated", "Reacted - type unspecified".
+                - "reactedTo": (Object) Describes content reacted to:
+                    - "type": (String) "post" or "comment".
+                    - "author": (String) Author of reacted content.
+                    - "authorHeadline": (String).
+                    - "contentSnippet": (String) Brief snippet of reacted content.
+                - "originalPostContext": (Object or null) If reaction to a comment, context of main post:
+                    - "author": (String) Main post author.
+                    - "contentSnippet": (String) Brief snippet of main post.
+
+                INITIAL PARSED JSON (Reactions):
+                {{#start_linkedin_refiner.initial_parsed_json#}}
+
+                RAW TEXT FOR REFERENCE (Reactions):
+                {{#start_linkedin_refiner.raw_section_text#}}
+                ---IF section_type IS 'reactions' END---
+
+                ---END TARGET JSON STRUCTURES AND RAW TEXT PER SECTION---
+          selected: false
+          title: 'LinkedIn Data Refinement LLM (OpenRouter)'
+          type: llm
+          vision:
+            enabled: false
+        height: 500
+        id: 'llm_linkedin_refiner'
+        position:
+          x: 450
+          y: 150
+        positionAbsolute:
+          x: 450
+          y: 150
+        selected: false
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 320
+      - data:
+          desc: 'Outputs the final, refined, and completed JSON.'
+          outputs:
+            - value_selector:
+                - 'llm_linkedin_refiner'
+                - text # The text output of the LLM node (which should be the final JSON)
+              variable: final_refined_json
+          selected: false
+          title: 'Final Refined JSON Output'
+          type: end
+        height: 105
+        id: 'end_linkedin_refiner'
+        position:
+          x: 850
+          y: 150
+        positionAbsolute:
+          x: 850
+          y: 150
+        selected: false
+        sourcePosition: right
+        targetPosition: left
+        type: custom
+        width: 243
+    viewport:
+      x: -50
+      y: 50
+      zoom: 0.85

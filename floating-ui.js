@@ -1,16 +1,17 @@
-// floating-ui.js - Full rewritten file with changes focused on the onMessage listener
+// floating-ui.js
+// Version: FloatingUI_v4_FinalDebug_SyntaxFixed (incorporates previous fixes and ensures syntax)
 
 (function() {
-  const SCRIPT_NAME = "FloatingUI_v4_FinalDebug"; // New version for this fix
-  if (window.linkedInExtractorFloatingUIMarker_v4_FinalDebug) {
+  const SCRIPT_NAME = "FloatingUI_v4_FinalDebug_SyntaxFixed";
+  if (window.linkedInExtractorFloatingUIMarker_v4_FinalDebug_SyntaxFixed) {
     console.log(`${SCRIPT_NAME}: Already initialized.`);
     return;
   }
-  window.linkedInExtractorFloatingUIMarker_v4_FinalDebug = true;
+  window.linkedInExtractorFloatingUIMarker_v4_FinalDebug_SyntaxFixed = true;
   console.log(`${SCRIPT_NAME}: Initializing...`);
 
   let isMenuOpen = false;
-  let isProcessingAction = false; // This flag indicates if the UI *thinks* an action is ongoing
+  let isProcessingAction = false; 
 
   let floatingButton, menu, toastContainer;
   const sfx = "_floatV4";
@@ -27,9 +28,6 @@
       .le-float-btn${sfx} .icon-processing${sfx} { display: none; animation: le-rotate${sfx} 1.2s linear infinite; line-height:1; }
       .le-float-btn${sfx}.processing${sfx} .icon-default${sfx} { display: none; }
       .le-float-btn${sfx}.processing${sfx} .icon-processing${sfx} { display: inline-block; }
-      .le-float-btn${sfx}.success_icon${sfx} .icon-default${sfx} { /* color: #4CAF50; */ } /* Style via icon content now */
-      .le-float-btn${sfx}.error_icon${sfx} .icon-default${sfx} { /* color: #D32F2F; */ } /* Style via icon content now */
-
       .le-toast-container${sfx} { position: fixed; bottom: 85px; right: 20px; z-index: 2147483639; display: flex; flex-direction: column; gap: 10px; max-width: 320px; }
       .le-toast${sfx} { background-color: #333; color: white; padding: 12px 18px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); opacity: 0; transform: translateX(110%); transition: all 0.4s cubic-bezier(0.21,0.95,0.53,1); font-family: Arial, sans-serif; font-size: 13px; line-height: 1.45; word-wrap: break-word; }
       .le-toast${sfx}.show${sfx} { opacity: 1; transform: translateX(0); }
@@ -48,13 +46,11 @@
       @keyframes le-rotate${sfx} { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     `;
     document.head.appendChild(styles);
-    // console.log(`${SCRIPT_NAME}: Styles injected.`);
   }
 
   function createBaseUI() {
     const floatingButtonId = `le-float-btn-id${sfx}`;
     if (document.getElementById(floatingButtonId)) {
-      // console.warn(`${SCRIPT_NAME}: Floating button UI (id: ${floatingButtonId}) already exists.`);
       floatingButton = document.getElementById(floatingButtonId);
       menu = document.getElementById(`le-menu-id${sfx}`);
       toastContainer = document.getElementById(`le-toast-container-id${sfx}`);
@@ -85,29 +81,29 @@
         toggleMenu(false);
       }
     });
-    // console.log(`${SCRIPT_NAME}: Base UI elements created.`);
   }
 
   function populateMenu() {
-    if (!menu) { /* console.error(`${SCRIPT_NAME}: Menu element not found during populateMenu.`); */ return; }
-    menu.innerHTML = ''; // Clear previous items
+    if (!menu) { return; }
+    menu.innerHTML = ''; 
     menu.insertAdjacentHTML('beforeend', `
       <div class="le-menu-title${sfx}">Data Collection</div>
       <button class="le-menu-item${sfx}" data-action="startNewCollectionSession">Start New Session</button>
       <div class="le-menu-divider${sfx}"></div>
       <button class="le-menu-item${sfx}" data-action="initiateCurrentPageTextCollection">Collect Current Page Text</button>
       <div class="le-menu-divider${sfx}"></div>
+      <button class="le-menu-item${sfx}" data-action="refineAllDataWithDify">Refine All Sections with AI</button>
+      <div class="le-menu-divider${sfx}"></div>
       <button class="le-menu-item${sfx}" data-action="downloadCollectedDataFile">Download Collected Data</button>
     `);
     menu.querySelectorAll(`.le-menu-item${sfx}`).forEach(item => {
-      item.removeEventListener('click', handleMenuAction);
+      item.removeEventListener('click', handleMenuAction); // Ensure no duplicate listeners
       item.addEventListener('click', handleMenuAction);
     });
-    // console.log(`${SCRIPT_NAME}: Menu populated.`);
   }
 
   function showToast(message, type = 'info', duration = 4500) {
-    if (!toastContainer) { /* console.warn(`${SCRIPT_NAME}: Toast container not found`); */ return; }
+    if (!toastContainer) { return; }
     const toast = document.createElement('div');
     toast.className = `le-toast${sfx} ${type}${sfx}`;
     toast.textContent = message;
@@ -119,57 +115,81 @@
     }, duration);
   }
 
- function setButtonState(newState) {
-    if (!floatingButton) { /* console.error(`${SCRIPT_NAME}: Floating button is null in setButtonState.`); */ return; }
-    isProcessingAction = (newState === 'processing'); // Update global flag based on intended state
+  function setButtonState(newState) {
+    if (!floatingButton) { return; }
+    
+    floatingButton.classList.remove(`processing${sfx}`);
 
-    floatingButton.classList.remove(`processing${sfx}`, `success_icon${sfx}`, `error_icon${sfx}`);
-    const iconDefault = floatingButton.querySelector(`.icon-default${sfx}`);
-    if (!iconDefault) { // Ensure icons exist
+    if (window.buttonStateTimeout) {
+        clearTimeout(window.buttonStateTimeout);
+        window.buttonStateTimeout = null;
+    }
+    
+    isProcessingAction = (newState === 'processing');
+    
+    console.log(`${SCRIPT_NAME}: Button state changing from ${floatingButton.dataset.currentState || 'unknown'} to ${newState}. isProcessingAction: ${isProcessingAction}`);
+    floatingButton.dataset.currentState = newState;
+
+    let iconDefault = floatingButton.querySelector(`.icon-default${sfx}`);
+    if (!iconDefault) { 
         floatingButton.innerHTML = `<span class="icon-default${sfx}">LD</span><span class="icon-processing${sfx}">⚙️</span>`;
         iconDefault = floatingButton.querySelector(`.icon-default${sfx}`);
     }
     
     switch(newState) {
       case 'processing':
-        floatingButton.classList.add(`processing${sfx}`);
-        if (iconDefault) iconDefault.textContent = 'LD';
+        floatingButton.classList.add(`processing${sfx}`); 
+        if (iconDefault) iconDefault.textContent = 'LD'; 
+        
+        window.buttonStateTimeout = setTimeout(() => {
+            console.warn(`${SCRIPT_NAME}: Processing timeout reached (30s for simple, longer for Dify externally). Resetting button state if not externally managed.`);
+            if (isProcessingAction && floatingButton.classList.contains(`processing${sfx}`)) { 
+                showToast('Operation timed out or background is still working. If stuck, try manual reset or check data.', 'warning', 6000);
+                setButtonState('default'); 
+            }
+        }, 30000); // This timeout is a fallback; Dify might take longer, its updates should reset the button via messages.
         break;
+        
       case 'success':
-        if (iconDefault) iconDefault.textContent = '✅';
-        // floatingButton.classList.add(`success_icon${sfx}`); // Optional class for further styling
+        if (iconDefault) iconDefault.textContent = '✅'; 
         break;
+        
       case 'error':
-        if (iconDefault) iconDefault.textContent = '❌';
-        // floatingButton.classList.add(`error_icon${sfx}`); // Optional class
+        if (iconDefault) iconDefault.textContent = '❌'; 
         break;
-      default: // 'default'
-        if (iconDefault) iconDefault.textContent = 'LD';
+        
+      default: 
+        if (iconDefault) iconDefault.textContent = 'LD'; 
         break;
     }
 
     if (newState === 'success' || newState === 'error') {
-        setTimeout(() => {
-            if (!isProcessingAction && floatingButton.querySelector(`.icon-default${sfx}`) &&
-                (floatingButton.querySelector(`.icon-default${sfx}`).textContent === '✅' || floatingButton.querySelector(`.icon-default${sfx}`).textContent === '❌') ) {
+        window.buttonStateTimeout = setTimeout(() => {
+            const currentIconDefault = floatingButton.querySelector(`.icon-default${sfx}`); 
+            if (!isProcessingAction && currentIconDefault &&
+                (currentIconDefault.textContent === '✅' || currentIconDefault.textContent === '❌')) {
+                console.log(`${SCRIPT_NAME}: Auto-reverting ${newState} state to default after 3s`);
                 setButtonState('default');
             }
         }, 3000);
     }
+    console.log(`${SCRIPT_NAME}: setButtonState END. New state: ${newState}. Button classes: ${floatingButton.className}`);
   }
 
   function toggleMenu(forceState) {
     if (!menu) { return; }
     const shouldBeOpen = (typeof forceState === 'boolean') ? forceState : !isMenuOpen;
-    if (shouldBeOpen && isProcessingAction && action !== 'startNewCollectionSession' && action !== 'downloadCollectedDataFile') {
+
+    if (shouldBeOpen && isProcessingAction) {
         showToast('Action in progress. Please wait.', 'warning');
         return;
     }
+
     isMenuOpen = shouldBeOpen;
     menu.classList.toggle(`show${sfx}`, isMenuOpen);
   }
 
-  const getCurrentPageInfoForCollection = () => { /* ... (this function remains the same as your last full version) ... */
+  const getCurrentPageInfoForCollection = () => { 
       const url = window.location.href;
       if (!url.toLowerCase().includes("linkedin.com")) return { error: "Not a LinkedIn page." };
       const lowerUrl = url.toLowerCase();
@@ -180,8 +200,19 @@
       else if (lowerUrl.includes('/in/')) pathKey = 'profile';
       const profileUrlMatch = url.match(/https:\/\/www\.linkedin\.com\/in\/[^/]+\/?/);
       const baseProfileUrl = profileUrlMatch ? profileUrlMatch[0] : null;
-      if (!baseProfileUrl) return { error: "Could not determine base profile URL (/in/...)."};
-      if (!pathKey) return { baseProfileUrl: baseProfileUrl, error: "Could not determine page section (profile, posts, etc.)."};
+      if (!baseProfileUrl && pathKey === 'profile') { // if it's a profile page, we really need the baseProfileUrl
+          return { error: "Could not determine base profile URL (/in/...) for profile page."};
+      }
+      // For activity pages, baseProfileUrl might still be relevant if we can derive it for context.
+      // If not, some actions (like refinement by profileURL) might be restricted if baseProfileUrl is null.
+      // For now, we pass what we have.
+      if (!pathKey && url.includes('/in/')) { // If on a profile but no specific activity sub-page
+          pathKey = 'profile'; // Default to profile section
+      }
+      if (!pathKey && !baseProfileUrl) { // If we have neither, it's problematic for some actions
+          return {error: "Could not determine a valid LinkedIn section or profile URL from the current page."};
+      }
+      
       return { baseProfileUrl, pathKey, currentUrl: url, error: null };
   };
 
@@ -189,18 +220,17 @@
     const targetButton = e.currentTarget;
     const action = targetButton.dataset.action;
 
-    // Allow some actions even if 'isProcessingAction' is true for another type of action
-    if (isProcessingAction && action === 'initiateCurrentPageTextCollection') {
-        showToast('Previous page collection still in progress. If stuck, try "Start New Session".', 'warning', 5000);
+    if (isProcessingAction && (action === 'initiateCurrentPageTextCollection' || action === 'refineAllDataWithDify')) {
+        showToast('Previous page collection or AI refinement still in progress. If stuck, try "Start New Session".', 'warning', 5000);
         console.warn(`${SCRIPT_NAME}: Menu action '${action}' blocked, isProcessingAction is true.`);
         return;
     }
 
     console.log(`${SCRIPT_NAME}: Menu action initiated: ${action}`);
-    toggleMenu(false);
+    toggleMenu(false); 
 
-    if (action === 'initiateCurrentPageTextCollection' || action === 'startNewCollectionSession' || action === 'downloadCollectedDataFile') {
-        setButtonState('processing'); // Set to processing *before* sending message
+    if (action === 'initiateCurrentPageTextCollection' || action === 'startNewCollectionSession' || action === 'downloadCollectedDataFile' || action === 'refineAllDataWithDify') {
+        setButtonState('processing'); 
     }
 
     let messagePayload = { action: action };
@@ -208,9 +238,9 @@
 
     if (action === 'initiateCurrentPageTextCollection') {
         const pageInfo = getCurrentPageInfoForCollection();
-        if (pageInfo.error) {
-          showToast(pageInfo.error, 'error');
-          setButtonState('error');
+        if (pageInfo.error || !pageInfo.pathKey || !pageInfo.baseProfileUrl) { // Ensure pathKey and baseProfileUrl are present for collection
+          showToast(pageInfo.error || "Cannot determine page details for collection.", 'error');
+          setButtonState('error'); 
           return;
         }
         initialToastMessage = `Collecting text for current '${pageInfo.pathKey}' page...`;
@@ -220,15 +250,24 @@
         initialToastMessage = 'Starting new data collection session...';
     } else if (action === 'downloadCollectedDataFile') {
         initialToastMessage = 'Preparing collected data for download...';
+    } else if (action === 'refineAllDataWithDify') { // New action handling
+        const pageInfo = getCurrentPageInfoForCollection();
+        if (pageInfo.error || !pageInfo.baseProfileUrl) { // baseProfileUrl is essential for refinement
+            showToast(pageInfo.error || 'Could not determine profile URL for refinement.', 'error');
+            setButtonState('error');
+            return;
+        }
+        initialToastMessage = `Starting AI refinement for all data on current profile...`;
+        messagePayload.profileUrl = pageInfo.baseProfileUrl;
+        // tabId will be passed by background script using sender.tab.id for UI updates.
     } else {
         console.error(`${SCRIPT_NAME}: Unknown action in menu: ${action}`);
         showToast(`Error: Unknown action '${action}'`, "error");
-        setButtonState('default'); // Reset if action is unknown
+        setButtonState('default'); 
         return;
     }
 
     showToast(initialToastMessage, 'info');
-    // console.log(`${SCRIPT_NAME}: Sending message to background:`, messagePayload);
 
     if (!chrome.runtime?.id) {
       console.error(`${SCRIPT_NAME}: Extension context invalidated before sending message for action '${action}'.`);
@@ -236,129 +275,159 @@
       setButtonState('error');
       return;
     }
+
+    try {
       chrome.runtime.sendMessage(messagePayload, (response) => {
         if (!chrome.runtime?.id) {
           console.warn(`${SCRIPT_NAME}: Context invalidated before/during response for '${action}'. Button state may rely on separate update.`);
-          // If we were processing, and context dies, we can't be sure of outcome.
-          // The 'updateFloatingUIStatus' handler should ideally catch final state if background is still alive.
-          // For now, if processing, assume it might have failed from UI perspective.
-          if (isProcessingAction && (action === 'initiateCurrentPageTextCollection' || action === 'startNewCollectionSession')) {
-              setButtonState('error'); // Cautious reset if context dies during these key ops
+          if (isProcessingAction && (action === 'initiateCurrentPageTextCollection' || action === 'startNewCollectionSession' || action === 'refineAllDataWithDify')) {
+              setButtonState('error'); 
           }
           return;
         }
 
-        // console.log(`${SCRIPT_NAME}: Direct response from background for '${action}':`, response);
-
         if (chrome.runtime.lastError) {
           const errorMsgBase = `Runtime Error for ${action}`;
-          let specificError = chrome.runtime.lastError.message;
+          let specificError = chrome.runtime.lastError.message || "Unknown runtime error";
           console.error(`${SCRIPT_NAME}: ${errorMsgBase}: ${specificError}`);
-
-          if (specificError.includes("Extension context invalidated")) {
-             showToast('Extension context lost. Reload page/extension.', 'error', 7000);
-          } else if (specificError.includes("Could not establish connection")) {
-             showToast('Cannot connect to background. Reload extension & page.', 'error', 7000);
-          } else {
-            showToast(`${errorMsgBase}: ${specificError.substring(0,100)}`, 'error');
-          }
+          showToast(`${errorMsgBase}: ${specificError.substring(0,100)}`, 'error');
           setButtonState('error');
           return;
         }
 
         if (response == null) {
             console.warn(`${SCRIPT_NAME}: No response object from background for ${action}.`);
-            // This state should ideally be updated by a follow-up 'updateFloatingUIStatus' if processing was long
-            // If not, it implies background didn't respond as expected.
-            if (isProcessingAction) { // If we were waiting for this response to stop processing
+            if (isProcessingAction) { 
                 showToast(`No response from background for ${action}. Check logs.`, 'error');
                 setButtonState('error');
             }
             return;
         }
         
-        // Primary UI updates (toast, final button state) are driven by 'updateFloatingUIStatus' from background.js.
-        // This direct callback can handle immediate success/failure that doesn't involve long background processing
-        // or act as a final check if the button is still 'processing'.
+        // For most actions, including refineAllDataWithDify, the final button state (success/error/default)
+        // should be primarily managed by updateFloatingUIStatus messages from background.js,
+        // as these operations can be multi-step or take time.
+        // The direct response here might only confirm receipt or immediate validation failure.
         if (!response.success) {
-            // console.error(`${SCRIPT_NAME}: Background reported failure for ${action}: ${response.error || 'Unknown error'}`);
-            // Toast and button state should have been set by 'updateFloatingUIStatus type:error'
-            // But if we get here and it's still processing, force error state.
+            // If processing was started, and an immediate failure is returned.
             if (isProcessingAction) {
                 showToast(response.error || `Action ${action} failed.`, 'error');
                 setButtonState('error');
             }
-        } else { // response.success is true
-            // For actions like 'startNewSession' or successful 'downloadInitiated',
-            // where background.js might send success quickly.
+        } else { 
+             // For quick actions or initial success acknowledgement
             if ((action === 'startNewCollectionSession' || action === 'downloadCollectedDataFile') && isProcessingAction) {
-                // Toast for these specific actions might have already been shown by updateUIs from background.
-                // But ensure button state is updated if it was a quick success.
-                setButtonState('success'); // This will revert to default after timeout
+                setButtonState('success'); 
             }
-            // If it's 'initiateCurrentPageTextCollection' and response.success is true,
-            // the 'updateFloatingUIStatus' with type 'success' or 'warning' from background.js is the main driver.
-            // If still 'processing' here, it means the final status update from background hasn't arrived or wasn't 'success'/'error'.
-            // We don't want to prematurely set to 'default' if background is still working.
+            // For initiateCurrentPageTextCollection and refineAllDataWithDify, 
+            // we rely on background script's updateFloatingUIStatus messages for more granular updates.
+            // The 'processing' state will remain until such a message updates it.
         }
-      }); // Closing parenthesis and semicolon for chrome.runtime.sendMessage
-    } catch (e) { // This catch is outside the sendMessage callback, which is correct. It should catch errors from the outer function scope.
+      });
+    } catch (e) {
+      console.error(`${SCRIPT_NAME}: Synchronous error on sendMessage for '${action}':`, e);
+      showToast(`Error sending command: ${e.message}. Reload page/extension.`, 'error', 7000);
+      setButtonState('error');
+    }
+  }
+
   function initialize() {
-    // console.log(`${SCRIPT_NAME}: DOM ready, running initialize().`);
     try {
+        console.log(`${SCRIPT_NAME}: Starting initialization...`);
+        
         createStyles();
         createBaseUI();
         populateMenu();
         setButtonState('default');
-
+        
+        if (!floatingButton || !menu || !toastContainer) {
+            throw new Error('Failed to create one or more UI components');
+        }
+        if (!chrome.runtime?.id) {
+            throw new Error('Chrome runtime not available during initialization');
+        }
+        
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-          if (!chrome.runtime?.id) {
-            console.warn(`${SCRIPT_NAME}: Extension context invalidated. Ignoring message:`, request.action);
-            return false; // Must return false or nothing if not sending a response
-          }
-
-          // Check if the sender's tab is still open before processing the message
-          if (sender.tab && (!sender.tab.id || !sender.tab.windowId)) {
-            console.warn(`${SCRIPT_NAME}: Sender tab is no longer valid. Ignoring message:`, request.action);
-            return false; // Must return false or nothing if not sending a response
-          }
-
-          if (request.action === 'updateFloatingUIStatus') {
-            // console.log(`${SCRIPT_NAME}: Processing 'updateFloatingUIStatus' - Type: ${request.type}, Msg: "${request.message ? request.message.substring(0,100) : 'N/A'}"`);
-            showToast(request.message || 'Status update', request.type || 'info');
-
-            // THIS IS THE PRIMARY PLACE TO UPDATE BUTTON STATE FROM BACKGROUND MESSAGES
-            if (request.type === 'success') {
-                setButtonState('success'); // Will show success icon, then revert to default
-            } else if (request.type === 'error') {
-                setButtonState('error');   // Will show error icon, then revert to default
-            } else if (request.type === 'warning') {
-                // For warnings, decide if it implies processing stopped.
-                // If it's a warning but the process completed, show 'default' or 'error' based on msg.
-                const msgLower = request.message ? request.message.toLowerCase() : "";
-                if (msgLower.includes("failed") || msgLower.includes("error") || msgLower.includes("⚠️")) {
-                    setButtonState('error');
-                } else {
-                    // A warning might still mean processing finished.
-                    setButtonState('default'); // Revert to default, temporary icon will fade.
+            try {
+                if (!chrome.runtime?.id) {
+                    console.warn(`${SCRIPT_NAME}: Extension context invalidated during onMessage. Ignoring message:`, request.action);
+                    return false;
                 }
-            } else if (request.type === 'info') {
-                // If it's an 'info' message and we were 'processing',
-                // and the message implies completion, reset the button.
-                const msgLower = request.message ? request.message.toLowerCase() : "";
-                if (isProcessingAction && (msgLower.includes("complete") || msgLower.includes("finished") || msgLower.includes("saved") || msgLower.includes("cleared") || msgLower.includes("initiated"))) {
-                     setButtonState('default');
+
+                if (request.action === 'updateFloatingUIStatus') {
+                    console.log(`${SCRIPT_NAME}: Received 'updateFloatingUIStatus' - Type: ${request.type}, Msg: "${request.message ? request.message.substring(0,100) : 'N/A'}"`);
+                    showToast(request.message || 'Status update', request.type || 'info');
+                    
+                    let newButtonStateToSet = null;
+
+                    if (request.type === 'success') {
+                        newButtonStateToSet = 'success';
+                    } else if (request.type === 'error') {
+                        newButtonStateToSet = 'error';   
+                    } else if (request.type === 'warning') {
+                        const msgLower = request.message ? request.message.toLowerCase() : "";
+                        if (msgLower.includes("failed") || msgLower.includes("error") || msgLower.includes("⚠️")) {
+                            newButtonStateToSet = 'error';
+                        } else {
+                            // For warnings that aren't errors, keep processing or revert to default if processing seems done.
+                            // If isProcessingAction is true and message implies completion, set to default.
+                            if (isProcessingAction && (msgLower.includes("completed") || msgLower.includes("finished") || msgLower.includes("issues"))) {
+                                newButtonStateToSet = 'default';
+                            } else if (!isProcessingAction) {
+                                newButtonStateToSet = 'default'; // Or let it timeout to default
+                            }
+                            // Otherwise, let spinner continue if it's a non-critical warning during a process.
+                        }
+                    } else if (request.type === 'info') {
+                        const message = request.message || "";
+                        const msgLower = message.toLowerCase();
+                        
+                        // Keywords indicating a process has finished or reached a final state for the button
+                        const completionKeywords = [
+                            "page processed. result:", "successfully parsed for", "raw text saved but parsing failed",
+                            "✅", "⚠️", // These symbols often indicate a final status from HSCTAP
+                            "ai refinement process completed", "refinement process initiated", // Dify specific
+                            "session started", "data cleared", "download initiated"
+                        ];
+                        
+                        const isProcessingComplete = completionKeywords.some(keyword => msgLower.includes(keyword.toLowerCase()));
+                        
+                        if (isProcessingAction && isProcessingComplete) {
+                             // If message indicates failure/warning despite being 'info' type, reflect that in button
+                            if (msgLower.includes("failed") || msgLower.includes("error") || msgLower.includes("⚠️")) {
+                                newButtonStateToSet = 'error';
+                            } else if (msgLower.includes("success") || msgLower.includes("✅") || msgLower.includes("completed")) {
+                                newButtonStateToSet = 'success'; // Could be success that then reverts to default
+                            } else {
+                                newButtonStateToSet = 'default';
+                            }
+                        } else if (isProcessingAction) {
+                            // Info message received while processing, but no clear completion detected. Spinner remains.
+                        } else {
+                            // Info message received while NOT processing. No button state change from this path.
+                        }
+                    }
+
+                    if (newButtonStateToSet) {
+                        setButtonState(newButtonStateToSet);
+                    }
                 }
-                // Otherwise, if 'info' and still processing, leave button as 'processing'.
+                return false; 
+            } catch (listenerError) {
+                console.error(`${SCRIPT_NAME}: Error in message listener:`, listenerError);
+                if (typeof showToast === 'function') {
+                    showToast('Extension error processing message. Please reload.', 'error');
+                }
+                return false;
             }
-          }
-          return false; // Indicate that we are not sending an async response from this listener
         });
+        
         console.log(`${SCRIPT_NAME}: Initialization complete. Floating UI is active.`);
         showToast('LinkedIn Data Extractor UI active.', 'info', 2000);
+        
     } catch (e) {
         console.error(`${SCRIPT_NAME}: CRITICAL ERROR during initialization:`, e);
-        if (typeof alert === 'function') { // Check if alert is available (might not be in all contexts)
+        if (typeof alert === 'function') { 
             alert("Error initializing LinkedIn Data Extractor UI. Check browser console (F12) for details and try reloading the page/extension.");
         }
     }
@@ -370,7 +439,5 @@
       } else {
           document.addEventListener("DOMContentLoaded", initialize);
       }
-  } else {
-      // console.log(`${SCRIPT_NAME}: Not a LinkedIn page. UI will not load.`);
   }
 })();

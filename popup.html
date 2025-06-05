@@ -91,7 +91,8 @@
 <body>
   <h1>LinkedIn Data Extractor</h1>
 
-  <div id="dataCollectionControls"> <button id="startNewSessionBtnPopup" title="Clears all previously collected data for this session.">Start New Collection Session</button>
+  <div id="dataCollectionControls">
+    <button id="startNewSessionBtnPopup" title="Clears all previously collected data for this session.">Start New Collection Session</button>
     <hr>
     <div class="instructions">
       <strong>Collect Page Text:</strong><br>
@@ -101,6 +102,8 @@
       3. Click "Collect Current Page Text" below.
     </div>
     <button id="collectCurrentPageBtnPopup">Collect Current Page Text</button>
+    <hr>
+    <button id="refineAllDataBtnPopup" title="Sends all collected data for the current profile to Dify for AI refinement.">Refine All Sections with AI</button>
     <hr>
     <button id="downloadCollectedBtnPopup" title="Downloads all data collected in this session.">Download Collected Data File</button>
   </div>
