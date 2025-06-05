@@ -297,10 +297,10 @@ async function handleSaveCapturedTextAndParse(profileUrl, sectionKey, rawText) {
 
 async function handleInitiateCurrentPageTextCollection(request, sender) {
    const { profileUrl, pathKey } = request;
-   const tabId = request.tabId || sender.tab?.id;
-
    if (!profileUrl || !pathKey) {
        const errorMsg = "URL or pathKey missing for current page text collection.";
+       const tabId = request.tabId || sender.tab?.id; // Get tabId here for potential UI update
+
        console.error(`${SCRIPT_VERSION}: handleInitiateCurrentPageTextCollection - ERROR: ${errorMsg}`);
        if(tabId) updateUIs(errorMsg, "error", tabId); // Update UI if tabId is available
        return { success: false, error: errorMsg }; // Return error object
@@ -311,6 +311,8 @@ async function handleInitiateCurrentPageTextCollection(request, sender) {
        // Cannot update specific tab UI, but error will be sent back to popup/caller
        return { success: false, error: errorMsg }; // Return error object
    }
+
+   const tabId = request.tabId || sender.tab?.id; // Ensure tabId is available after the checks
 
    updateUIs(`Extracting text from current ${pathKey} page...`, "info", tabId);
    try {

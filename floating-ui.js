@@ -236,6 +236,12 @@
       setButtonState('error');
       return;
     }
+    if (!sender?.tab?.id || !sender.tab.windowId) { // Check if the tab is still valid/open
+      console.error(`${SCRIPT_NAME}: Extension context invalidated before sending message for action '${action}'.`);
+      showToast('Extension context lost. Please reload page and extension.', 'error', 7000);
+      setButtonState('error');
+      return;
+    }
 
     try {
       chrome.runtime.sendMessage(messagePayload, (response) => {
@@ -322,6 +328,12 @@
         chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           if (!chrome.runtime?.id) {
             console.warn(`${SCRIPT_NAME}: Extension context invalidated. Ignoring message:`, request.action);
+            return false; // Must return false or nothing if not sending a response
+          }
+
+          // Check if the sender's tab is still open before processing the message
+          if (sender.tab && (!sender.tab.id || !sender.tab.windowId)) {
+            console.warn(`${SCRIPT_NAME}: Sender tab is no longer valid. Ignoring message:`, request.action);
             return false; // Must return false or nothing if not sending a response
           }
 
