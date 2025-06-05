@@ -236,14 +236,6 @@
       setButtonState('error');
       return;
     }
-    if (!sender?.tab?.id || !sender.tab.windowId) { // Check if the tab is still valid/open
-      console.error(`${SCRIPT_NAME}: Extension context invalidated before sending message for action '${action}'.`);
-      showToast('Extension context lost. Please reload page and extension.', 'error', 7000);
-      setButtonState('error');
-      return;
-    }
-
-    try {
       chrome.runtime.sendMessage(messagePayload, (response) => {
         if (!chrome.runtime?.id) {
           console.warn(`${SCRIPT_NAME}: Context invalidated before/during response for '${action}'. Button state may rely on separate update.`);
@@ -311,12 +303,6 @@
         }
       });
     } catch (e) {
-      console.error(`${SCRIPT_NAME}: Synchronous error on sendMessage for '${action}':`, e);
-      showToast(`Error sending command: ${e.message}. Reload page/extension.`, 'error', 7000);
-      setButtonState('error');
-    }
-  }
-
   function initialize() {
     // console.log(`${SCRIPT_NAME}: DOM ready, running initialize().`);
     try {
